@@ -20,7 +20,8 @@ window.APP_CONFIG = {
   DATE_LIMITE_DEPOT: '',
 
   // true : une rubrique ne s'ouvre que lorsque la précédente est complète
-  PROGRESSION_GUIDEE: true,
+  // false : accès libre à toutes les rubriques
+  PROGRESSION_GUIDEE: false,
 
   // Taille maximale du PDF déposé (en Mo)
   TAILLE_MAX_PDF_MO: 10
