@@ -340,3 +340,27 @@ table.prof td { vertical-align: middle; }
   .doc-cover { page-break-after: avoid; border: 0; padding-top: 30vh; }
   table, .canvas, .calc-box { page-break-inside: avoid; }
 }
+
+/* ---------- Prévisionnel : tableaux et graphiques ---------- */
+table.result tr.sub th { background: var(--creme); color: var(--brun); font-size: .82rem; text-transform: uppercase; letter-spacing: .03em; padding-top: 10px; }
+table.result tr.total td, table.result tr.total th { font-weight: 700; border-top: 2px solid var(--trait); }
+table.result tr.strong td, table.result tr.strong th { font-weight: 700; }
+table.result tr.muted-row td { color: var(--gris); font-style: italic; }
+table.result.treso { font-size: .78rem; }
+table.result.treso th, table.result.treso td { padding: 5px 6px; }
+table.result.treso tbody th { font-weight: 500; white-space: nowrap; }
+table.result.cr3 td:first-child { min-width: 200px; }
+.chart-wrap { margin: 10px 0 14px; max-width: 720px; }
+.chart { width: 100%; height: auto; display: block; }
+.ch-grid { stroke: var(--trait); stroke-width: 1; }
+.ch-axis { stroke: var(--brun); stroke-width: 1.2; }
+.ch-pos { fill: var(--ambre); }
+.ch-neg { fill: var(--rouge); }
+.ch-lbl { font: 11px var(--font); fill: var(--gris); }
+@media print {
+  .table-wrap { overflow: visible !important; }
+  table.result.treso { font-size: 5.6pt; width: 100%; }
+  table.result.treso th, table.result.treso td { padding: 2px 2px; }
+  table.result.treso tbody th { white-space: normal; width: 16%; }
+  .chart-wrap { max-width: 100%; }
+}

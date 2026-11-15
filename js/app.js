@@ -53,6 +53,13 @@
   }
   function pathAttr(arr) { return esc(arr.join('|')); }
 
+  /** Un champ conditionnel est-il visible ? (showIf peut viser une autre rubrique avec « rub ») */
+  function shown(r, f) {
+    if (!f.showIf) return true;
+    const src = f.showIf.rub ? rd(f.showIf.rub) : rd(r.id);
+    return src[f.showIf.field] === f.showIf.equals;
+  }
+
   /* ================= Complétude ================= */
   function gridRowComplete(f, row) {
     if (!row) return false;
@@ -64,7 +71,7 @@
     const d = rd(r.id);
     const items = [];
     r.fields.forEach(function (f) {
-      if (f.showIf && d[f.showIf.field] !== f.showIf.equals) return;
+      if (!shown(r, f)) return;
       switch (f.type) {
         case 'text': case 'textarea': case 'select': case 'number':
           if (f.req) items.push({ label: f.label, ok: filled(d[f.id]) });
@@ -109,6 +116,7 @@
         }
         case 'finance': {
           (f.req || []).forEach(function (k) { items.push({ label: FIN_LABELS[k] || k, ok: filled(d[k]) }); });
+          if (rd('r1').type_projet === 'Reprise') items.push({ label: FIN_LABELS.b_fonds, ok: C.num(d.b_fonds) > 0 });
           const fc = finance();
           if (fc.totBesoins > 0) items.push({ label: 'Plan de financement équilibré', ok: Math.abs(fc.totBesoins - fc.totRessources) < 1 });
           if (C.num(d.r_emprunt) > 0) items.push({ label: 'Taux et durée de l’emprunt', ok: filled(d.taux_emprunt) && filled(d.duree_emprunt) });
@@ -197,7 +205,7 @@
     const ro = S.readOnly ? ' disabled' : '';
     const help = f.help ? '<p class="help">' + esc(f.help) + '</p>' : '';
     const req = f.req ? '<span class="req" title="Obligatoire pour avancer">*</span>' : '';
-    if (f.showIf && d[f.showIf.field] !== f.showIf.equals) return '';
+    if (!shown(r, f)) return '';
     switch (f.type) {
       case 'heading':
         return '<h3 class="form-heading">' + esc(f.label) + '</h3>';
@@ -227,6 +235,7 @@
       case 'carte': return carteHtml(r, f);
       case 'ca': return '<div id="ca-results" class="calc-box">' + caResultsHtml() + '</div>';
       case 'finance': return financeHtml(r, f);
+      case 'reprise': return '<div id="reprise-box" class="calc-box">' + repriseHtml() + '</div>';
       case 'coherence': return '<div id="coherence-box">' + coherenceHtml(r) + '</div>';
       case 'depot': return '<div id="depot-box">' + depotHtml() + '</div>';
     }
@@ -359,14 +368,33 @@
       const s = c.sc[k];
       return '<tr' + (k === 'prudent' ? ' class="hl"' : '') + '><th>' + k.charAt(0).toUpperCase() + k.slice(1) + (k === 'prudent' ? ' (retenu)' : '') + '</th><td>' + s.taux.toLocaleString('fr-FR') + ' %</td><td>' + s.clients.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + '</td><td>' + eur(c.panierHT, 2) + '</td><td>' + c.jours + '</td><td><strong>' + eur(s.ca) + '</strong></td></tr>';
     }).join('');
-    return '<h4>Mon chiffre d’affaires prévisionnel (calculé automatiquement)</h4>' +
+    return gammesHtml(c) + '<h4>Mon chiffre d’affaires prévisionnel (calculé automatiquement)</h4>' +
       '<div class="table-wrap"><table class="result"><thead><tr><th>Scénario</th><th>Taux</th><th>Clients / jour</th><th>Panier HT</th><th>Jours</th><th>CA annuel HT</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<p class="formula">' + esc(C.num(rd('r6').base).toLocaleString('fr-FR')) + ' × ' + c.sc.prudent.taux.toLocaleString('fr-FR') + ' % = ' + c.sc.prudent.clients.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' clients par jour × ' + eur(c.panierHT, 2) + ' HT × ' + c.jours + ' jours = <strong>' + eur(c.caPrudent) + ' HT</strong></p>' +
       msgList(c.alertes, c.ok) +
       '<p class="muted small">C’est ce chiffre prudent qui sera repris automatiquement dans vos finances (rubrique 8).</p>';
   }
 
-  function msgList(alertes, ok) {
+  function repriseHtml() {
+    const rp = C.repriseCalc(rd('r2'), rd('r8'));
+    if (!rp.caMoy) return '<p class="muted">L’évaluation du fonds s’affiche ici dès que vous saisissez le CA des derniers exercices.</p>';
+    return '<h4>Ce que vaut l’affaire (calculé automatiquement)</h4><ol class="steps">' +
+      '<li>CA moyen sur ' + rp.nbAnnees + ' exercice' + (rp.nbAnnees > 1 ? 's' : '') + ' : <strong>' + eur(rp.caMoy) + '</strong>' + (rp.nbAnnees >= 2 ? ' (évolution sur la période : ' + (rp.tendance >= 0 ? '+' : '') + pct(rp.tendance) + ')' : '') + '</li>' +
+      (rp.vMax ? '<li>Méthode des barèmes : ' + eur(rp.caMoy) + ' × ' + C.num(rd('r2').reprise_bareme_min).toLocaleString('fr-FR') + ' à ' + C.num(rd('r2').reprise_bareme_max).toLocaleString('fr-FR') + ' % = <strong>' + eur(rp.vMin) + ' à ' + eur(rp.vMax) + '</strong></li>' : '') +
+      (rp.annees ? '<li>Méthode de la rentabilité : le prix demandé représente <strong>' + rp.annees.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' années</strong> de résultat moyen (' + eur(rp.resMoy) + ' par an).</li>' : '') +
+      '</ol>' + msgList(rp.alertes, rp.ok) +
+      '<p class="muted small">Le prix que vous retenez se saisit dans le plan de financement (rubrique 8). Le CA de l’affaire est votre meilleure base pour estimer votre propre CA (rubrique 6).</p>';
+  }
+
+  function gammesHtml(c) {
+    if (!c.gammes) return '';
+    return '<div class="table-wrap"><table class="result"><thead><tr><th>Gamme</th><th class="num">Part</th><th class="num">TVA</th><th class="num">TTC dans le panier</th><th class="num">HT</th></tr></thead><tbody>' +
+      c.gammes.rows.map(function (g) { return '<tr><td>' + esc(g.nom) + '</td><td class="num">' + g.part.toLocaleString('fr-FR') + ' %</td><td class="num">' + g.tva.toLocaleString('fr-FR') + ' %</td><td class="num">' + eur(g.ttc, 2) + '</td><td class="num">' + eur(g.ht, 2) + '</td></tr>'; }).join('') +
+      '<tr class="total"><td>Panier</td><td class="num">' + c.gammes.totPart.toLocaleString('fr-FR') + ' %</td><td class="num">' + c.tva.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' %</td><td class="num">' + eur(c.panierTTC, 2) + '</td><td class="num">' + eur(c.panierHT, 2) + '</td></tr></tbody></table></div>' +
+      (c.gammes.tauxVar !== null ? '<p class="muted small">Coût d’achat moyen de votre panier : <strong>' + c.gammes.tauxVar.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' %</strong> du CA HT — c’est le taux de charges variables à reprendre en rubrique 8.</p>' : '');
+  }
+
+    function msgList(alertes, ok) {
     return (alertes.length ? '<ul class="msgs">' + alertes.map(function (a) { return '<li class="warn">' + esc(a) + '</li>'; }).join('') + '</ul>' : '') +
       (ok.length ? '<ul class="msgs">' + ok.map(function (a) { return '<li class="ok">' + esc(a) + '</li>'; }).join('') + '</ul>' : '');
   }
@@ -376,7 +404,10 @@
     b_invest: 'Investissements amortissables (travaux, matériel)', b_treso: 'Trésorerie de départ', r_apport: 'Apport personnel',
     taux_var: 'Taux de charges variables', src_var: 'Source du taux de charges variables', c_loyer: 'Loyer annuel', src_loyer: 'Source du loyer',
     c_energie: 'Énergie et eau', c_assurance: 'Assurances', c_compta: 'Comptabilité, banque, caisse', c_comm: 'Communication après lancement',
-    remu_net: 'Ma rémunération nette mensuelle', taux_cotis: 'Taux de cotisations sociales'
+    remu_net: 'Ma rémunération nette mensuelle', taux_cotis: 'Taux de cotisations sociales',
+    b_fonds: 'Prix du fonds de commerce repris', bfr_stock_j: 'BFR : jours de stock', bfr_clients_j: 'BFR : délai de paiement des clients',
+    bfr_fourn_j: 'BFR : délai de paiement des fournisseurs', croissance_a2: 'Évolution du CA en année 2', croissance_a3: 'Évolution du CA en année 3',
+    mois_debut: 'Mois d’ouverture'
   };
 
   function finField(key, label, opts) {
@@ -390,15 +421,26 @@
   }
   let FIN_REQ = [];
 
+  function finSelect(key, label, options, help) {
+    const d = rd('r8');
+    const ro = S.readOnly ? ' disabled' : '';
+    const isReq = FIN_REQ.indexOf(key) >= 0;
+    const opts = options.map(function (o) { const v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o; return '<option value="' + esc(v) + '"' + (String(d[key] || '') === String(v) ? ' selected' : '') + '>' + esc(l || 'Choisir…') + '</option>'; }).join('');
+    return '<div class="fin-row"><label>' + esc(label) + (isReq ? '<span class="req">*</span>' : '') + (help ? '<span class="help">' + esc(help) + '</span>' : '') + '</label>' +
+      '<div class="fin-inputs"><select data-path="' + pathAttr(['r8', key]) + '" data-live="fin"' + ro + '>' + opts + '</select></div></div>';
+  }
+
   function financeHtml(r, f) {
     FIN_REQ = f.req || [];
+    const reprise = rd('r1').type_projet === 'Reprise';
     return '<div class="fin">' +
       '<h3 class="form-heading">1. Mon plan de financement initial</h3>' +
       '<p class="help">Règle absolue : total des besoins = total des ressources. Tous les montants en HT.</p>' +
       '<div class="fin-cols"><div class="fin-col"><h4>Besoins</h4>' +
+        (reprise ? finField('b_fonds', 'Rachat du fonds de commerce (prix négocié + frais d’acte)', { src: 'src_fonds', help: 'Comparez-le à la fourchette calculée en rubrique 2' }) : '') +
         finField('b_invest', 'Investissements amortissables', { src: 'src_invest', help: 'Travaux, matériel, mobilier, véhicule acheté' }) +
         finField('duree_amort', 'Durée d’amortissement', { unit: 'ans', help: '5 ans par défaut' }) +
-        finField('b_non_amort', 'Investissements non amortis', { src: 'src_non_amort', help: 'Dépôt de garantie, fonds de commerce, droit au bail, licence' }) +
+        finField('b_non_amort', 'Investissements non amortis', { src: 'src_non_amort', help: reprise ? 'Dépôt de garantie, licence' : 'Dépôt de garantie, droit au bail ou pas-de-porte, licence' }) +
         finField('b_stock', 'Stock de départ', { src: 'src_stock' }) +
         finField('b_frais', 'Frais de lancement', { src: 'src_frais', help: 'Immatriculation, communication de lancement, formations' }) +
         finField('b_treso', 'Trésorerie de départ', { help: 'Au moins 2 mois de charges' }) +
@@ -423,10 +465,31 @@
       finField('c_comm', 'Communication après lancement (par an)', { src: 'src_comm' }) +
       finField('c_salaires', 'Salaires, coût employeur (par an)', { src: 'src_salaires', help: 'Le même montant qu’en rubrique 7' }) +
       finField('c_autres', 'Autres charges fixes (par an)', { src: 'src_autres', help: 'Entretien, abonnements, leasing…' }) +
+      finField('c_impots', 'Impôts et taxes (par an)', { src: 'src_impots', help: 'CFE (cotisation foncière des entreprises), taxe sur les enseignes… La CFE n’est pas due l’année de création.' }) +
       finField('remu_net', 'Ma rémunération nette (par mois)') +
       (rd('r8').statut === 'Micro-entreprise'
         ? finField('taux_cotis', 'Cotisations sociales en % du chiffre d\u2019affaires', { unit: '%', help: 'Micro-entreprise : taux fixé par l\u2019URSSAF selon l\u2019activité (vente ou service), à vérifier sur urssaf.fr' })
         : finField('taux_cotis', 'Cotisations sociales en % du net', { unit: '%', help: 'Ordre de grandeur à confirmer au simulateur URSSAF selon le statut' })) +
+      '<h3 class="form-heading">3. Mon besoin en fonds de roulement (BFR)</h3>' +
+      '<p class="help">L’argent bloqué dans le cycle d’exploitation : le stock à financer, plus ce que les clients vous doivent, moins ce que vous devez à vos fournisseurs (méthode Bpifrance Création).</p>' +
+      finField('bfr_stock_j', 'Stock moyen, en jours d’achats', { unit: 'jours', help: 'Ex. : 7 pour un café livré chaque semaine, 60 à 90 pour une boutique de vêtements' }) +
+      finField('bfr_clients_j', 'Délai de paiement de mes clients', { unit: 'jours', help: '0 si les clients paient sur place ; 30 à 60 pour des clients professionnels' }) +
+      finField('bfr_fourn_j', 'Délai de paiement accordé par mes fournisseurs', { unit: 'jours', help: '0 si vous payez à la commande ; 30 jours est courant' }) +
+
+      '<h3 class="form-heading">4. Mes années 2 et 3</h3>' +
+      '<p class="help">Seuls les changements sont à indiquer. Une case vide reprend le montant de l’année précédente.</p>' +
+      finField('croissance_a2', 'Évolution du CA en année 2', { unit: '%', help: 'Ex. : 10 (bouche-à-oreille, fidélisation) — justifiez-la à l’oral' }) +
+      finField('croissance_a3', 'Évolution du CA en année 3', { unit: '%', help: 'En général plus faible que l’année 2' }) +
+      finField('hausse_charges', 'Hausse annuelle des charges fixes', { unit: '%', help: '2 par défaut (inflation)' }) +
+      finField('c_salaires_a2', 'Salaires en année 2 (coût employeur, par an)', { help: 'Si votre signal de recrutement (rubrique 7) est atteint' }) +
+      finField('c_salaires_a3', 'Salaires en année 3 (coût employeur, par an)') +
+      finField('remu_net_a2', 'Ma rémunération nette en année 2 (par mois)') +
+      finField('remu_net_a3', 'Ma rémunération nette en année 3 (par mois)') +
+
+      '<h3 class="form-heading">5. Ma trésorerie mois par mois</h3>' +
+      '<p class="help">Le plan de trésorerie suit l’argent réellement encaissé et payé, TVA comprise, sur les 12 premiers mois.</p>' +
+      finSelect('mois_debut', 'Mois d’ouverture', [''].concat(C.MOIS)) +
+      finSelect('tva_achats', 'TVA sur mes achats de marchandises', [['', 'Même taux que mes ventes'], ['20', '20 %'], ['10', '10 %'], ['5.5', '5,5 %'], ['2.1', '2,1 %'], ['0', 'Pas de TVA']], 'Les investissements et les autres charges sont comptés à 20 %.') +
       '<div id="fin-results">' + financeResultsHtml() + '</div></div>';
   }
 
@@ -451,7 +514,9 @@
       line('Ma rémunération + cotisations', neg(f.remu), C.num(d.remu_net) ? eur(C.num(d.remu_net)) + ' net par mois + cotisations (' + C.num(d.taux_cotis).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' % ' + (f.micro ? 'du CA' : 'du net') + ')' : 'À compléter') +
       (f.interets ? line('Intérêts d’emprunt', neg(f.interets), eur(f.ressources.emprunt) + ' à ' + C.num(d.taux_emprunt).toLocaleString('fr-FR') + ' %') : '') +
       (f.amort ? line('Amortissements', neg(f.amort), eur(f.besoins.invest) + ' ÷ ' + (C.num(d.duree_amort) || 5) + ' ans') : '') +
+      (f.fixesSaisis.impots ? line('Impôts et taxes', neg(f.fixesSaisis.impots), d.src_impots) : '') +
       line('Résultat avant impôt', (f.resultat >= 0 ? '+ ' : '− ') + eur(Math.abs(f.resultat)), '', 'total ' + (f.resultat >= 0 ? 'pos' : 'negv')) +
+      (f.societe ? line('Impôt sur les sociétés', neg(f.is), '15 % jusqu’à 42 500 € de bénéfice, 25 % au-delà') + line('Résultat net', (f.resultatNet >= 0 ? '+ ' : '− ') + eur(Math.abs(f.resultatNet)), '', 'total ' + (f.resultatNet >= 0 ? 'pos' : 'negv')) : '') +
       '</tbody></table></div>';
 
     const seuil = '<h4>Mon seuil de rentabilité</h4><ol class="steps">' +
@@ -469,11 +534,125 @@
     const treso = '<h4>Ma trésorerie et ma banque</h4><ul class="plain">' +
       '<li>Charges à payer chaque mois (sans les amortissements, avec le remboursement de l’emprunt) : <strong>' + eur(f.decaissMensuel) + '</strong></li>' +
       '<li>Ma trésorerie de départ couvre <strong>' + f.moisTreso.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' mois</strong> de charges.</li>' +
-      (f.annuite ? '<li>Capacité d’autofinancement (résultat + amortissements) : <strong>' + eur(f.caf) + '</strong> pour une annuité d’emprunt de ' + eur(f.annuite) + '.</li>' : '') +
+      (f.annuite ? '<li>Capacité d’autofinancement (résultat net + amortissements) : <strong>' + eur(f.caf) + '</strong> pour une annuité d’emprunt de ' + eur(f.annuite) + '.</li>' : '') +
       (f.totBesoins ? '<li>Apport, prêt d’honneur et aides : <strong>' + pct(f.quasiFP / f.totBesoins) + '</strong> du besoin total.</li>' : '') +
       '</ul>';
 
-    return '<div class="calc-box">' + cr + seuil + treso + msgList(f.alertes, f.ok) + '</div>';
+    const p = C.previsionnel(d, c, f);
+    return '<div class="calc-box">' + cr + seuil + treso + msgList(f.alertes, f.ok) + '</div>' +
+      '<div class="calc-box">' + bfrHtml(p, f) + cr3Html(p, f) + empruntHtml(p) + pf3Html(p) + tresoHtml(p) + msgList(p.alertes, p.ok) + '</div>';
+  }
+
+  function sgn(v) { return (v < 0 ? '− ' : '') + eur(Math.abs(v)); }
+
+  function bfrHtml(p, f) {
+    const b = p.ans[0].bfr;
+    return '<h4>Mon besoin en fonds de roulement (année 1)</h4><div class="table-wrap"><table class="result"><tbody>' +
+      '<tr><td>Stock moyen (achats HT de ' + C.num(rd('r8').bfr_stock_j) + ' jours)</td><td class="num">' + eur(b.stock) + '</td></tr>' +
+      '<tr><td>+ Créances clients TTC (' + C.num(rd('r8').bfr_clients_j) + ' jours de CA)</td><td class="num">' + eur(b.clients) + '</td></tr>' +
+      '<tr><td>− Dettes fournisseurs TTC (' + C.num(rd('r8').bfr_fourn_j) + ' jours d’achats)</td><td class="num">− ' + eur(b.fourn) + '</td></tr>' +
+      '<tr class="total"><td>BFR</td><td class="num">' + sgn(b.bfr) + '</td></tr></tbody></table></div>' +
+      '<p class="muted small">' + (b.bfr <= 0 ? 'BFR négatif : vos clients paient avant que vous payiez vos fournisseurs, c’est le cas de la plupart des commerces de détail.' : 'Ce montant doit être couvert par votre stock de départ et votre trésorerie de départ (' + eur(f.besoins.stock + f.besoins.treso) + ').') + '</p>';
+  }
+
+  function cr3Html(p, f) {
+    const A = p.ans;
+    const row = function (label, k, cls, neg) { return '<tr class="' + (cls || '') + '"><td>' + label + '</td>' + A.map(function (a) { const v = typeof k === 'function' ? k(a) : a[k]; return '<td class="num">' + (neg && v ? '− ' + eur(v) : sgn(v)) + '</td>'; }).join('') + '</tr>'; };
+    return '<h4>Mon compte de résultat sur 3 ans</h4><div class="table-wrap"><table class="result cr3"><thead><tr><th></th><th class="num">Année 1</th><th class="num">Année 2</th><th class="num">Année 3</th></tr></thead><tbody>' +
+      row('Chiffre d’affaires HT', 'ca', 'strong') +
+      row('Achats consommés (charges variables)', 'achats', '', true) +
+      row('Charges externes (loyer, énergie, assurances, honoraires, publicité…)', 'externes', '', true) +
+      (A.some(function (a) { return a.impots; }) ? row('Impôts et taxes', 'impots', '', true) : '') +
+      (A.some(function (a) { return a.salaires; }) ? row('Salaires (coût employeur)', 'salaires', '', true) : '') +
+      row('Rémunération du dirigeant et cotisations', 'remu', '', true) +
+      row('Dotations aux amortissements', 'dotations', '', true) +
+      (A.some(function (a) { return a.interets; }) ? row('Charges financières (intérêts)', 'interets', '', true) : '') +
+      row('Résultat avant impôt', 'rai', 'total') +
+      (f.societe ? row('Impôt sur les sociétés', 'is', '', true) : '') +
+      row(f.societe ? 'Résultat net' : 'Résultat de l’exercice', 'net', 'total') +
+      row('Capacité d’autofinancement (résultat net + amortissements)', 'caf', 'muted-row') +
+      '</tbody></table></div>' +
+      (!f.societe ? '<p class="muted small">Entreprise individuelle ou micro-entreprise : le bénéfice est imposé à l’impôt sur le revenu du dirigeant, en dehors de l’entreprise.</p>' : '');
+  }
+
+  function empruntHtml(p) {
+    if (!p.emprunt.length) return '';
+    return '<h4>Le remboursement de mon emprunt</h4><div class="table-wrap"><table class="result"><thead><tr><th>Année</th><th class="num">Capital restant dû</th><th class="num">Intérêts (charge)</th><th class="num">Capital remboursé</th><th class="num">Annuité</th></tr></thead><tbody>' +
+      p.emprunt.map(function (l) { return '<tr><td>' + l.annee + '</td><td class="num">' + eur(l.debut) + '</td><td class="num">' + eur(l.interets) + '</td><td class="num">' + eur(l.capital) + '</td><td class="num">' + eur(l.annuite) + '</td></tr>'; }).join('') +
+      '</tbody></table></div><p class="muted small">Seuls les intérêts sont une charge du compte de résultat ; le capital remboursé est payé avec la trésorerie (soit environ ' + eur(p.emprunt[0].annuite / 12) + ' par mois).</p>';
+  }
+
+  function pf3Html(p) {
+    const P = p.pf3;
+    const r = function (label, fn, cls) { return '<tr class="' + (cls || '') + '"><td>' + label + '</td>' + P.map(function (x) { const v = fn(x); return '<td class="num">' + (v ? sgn(v) : '–') + '</td>'; }).join('') + '</tr>'; };
+    return '<h4>Mon plan de financement à 3 ans</h4><div class="table-wrap"><table class="result"><thead><tr><th></th><th class="num">Année 1</th><th class="num">Année 2</th><th class="num">Année 3</th></tr></thead><tbody>' +
+      '<tr class="sub"><th colspan="4">Besoins durables</th></tr>' +
+      r('Investissements (y compris fonds et dépôt)', function (x) { return x.besoins.invest; }) +
+      r('Frais de lancement', function (x) { return x.besoins.frais; }) +
+      r('Stock et trésorerie de départ, puis hausse du BFR', function (x) { return x.besoins.bfr; }) +
+      r('Remboursement du capital emprunté', function (x) { return x.besoins.remb; }) +
+      r('Total des besoins', function (x) { return x.totB; }, 'total') +
+      '<tr class="sub"><th colspan="4">Ressources durables</th></tr>' +
+      r('Apport personnel', function (x) { return x.ressources.apport; }) +
+      r('Prêt d’honneur et aides', function (x) { return x.ressources.quasi; }) +
+      r('Emprunt bancaire', function (x) { return x.ressources.emprunt; }) +
+      r('Capacité d’autofinancement', function (x) { return x.ressources.caf; }) +
+      r('Total des ressources', function (x) { return x.totR; }, 'total') +
+      r('Excédent de l’année', function (x) { return x.excedent; }, 'strong') +
+      r('Excédent cumulé', function (x) { return x.cumul; }, 'strong') +
+      '</tbody></table></div>';
+  }
+
+  function tresoHtml(p) {
+    const M = p.mois;
+    const cell = function (v) { return '<td class="num">' + (Math.abs(v) < 0.5 ? '' : sgn(v)) + '</td>'; };
+    const line = function (label, fn, cls) { return '<tr class="' + (cls || '') + '"><th>' + label + '</th>' + M.map(function (m) { return cell(fn(m)); }).join('') + '</tr>'; };
+    const has = function (fn) { return M.some(function (m) { return Math.abs(fn(m)) >= 0.5; }); };
+    const lines = [
+      ['Ventes encaissées (TTC)', function (m) { return m.enc.ventes; }],
+      ['Apports et prêt d’honneur', function (m) { return m.enc.apports; }],
+      ['Emprunt débloqué', function (m) { return m.enc.emprunt; }],
+      ['Remboursement de TVA', function (m) { return m.enc.rembTVA; }]
+    ].filter(function (l) { return has(l[1]); });
+    const dlines = [
+      ['Investissements et frais (TTC)', function (m) { return m.dec.invest; }],
+      ['Achats de marchandises (TTC)', function (m) { return m.dec.achats; }],
+      ['Charges externes (TTC)', function (m) { return m.dec.externes; }],
+      ['Rémunération et salaires', function (m) { return m.dec.personnel; }],
+      ['Échéance d’emprunt', function (m) { return m.dec.emprunt; }],
+      ['TVA reversée', function (m) { return m.dec.tva; }]
+    ].filter(function (l) { return has(l[1]); });
+    return '<h4>Mon plan de trésorerie sur 12 mois</h4>' + tresoChart(p) +
+      '<div class="table-wrap"><table class="result treso"><thead><tr><th></th>' + M.map(function (m) { return '<th class="num">' + esc(moisCourt(m.nom)) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      '<tr class="sub"><th colspan="13">Encaissements</th></tr>' + lines.map(function (l) { return line(l[0], l[1]); }).join('') +
+      line('Total encaissements', function (m) { return m.totEnc; }, 'total') +
+      '<tr class="sub"><th colspan="13">Décaissements</th></tr>' + dlines.map(function (l) { return line(l[0], l[1]); }).join('') +
+      line('Total décaissements', function (m) { return m.totDec; }, 'total') +
+      line('Solde du mois', function (m) { return m.solde; }) +
+      line('Trésorerie en fin de mois', function (m) { return m.cumul; }, 'strong') +
+      '</tbody></table></div>' +
+      (p.franchise ? '<p class="muted small">Franchise de TVA : vous ne facturez pas la TVA et ne la récupérez pas sur vos achats.</p>' : '<p class="muted small">TVA de chaque mois reversée le mois suivant ; le crédit de TVA né des investissements de départ est remboursé environ 2 mois plus tard.</p>');
+  }
+
+  function moisCourt(nom) { return ['Janv.', 'Févr.', 'Mars', 'Avr.', 'Mai', 'Juin', 'Juil.', 'Août', 'Sept.', 'Oct.', 'Nov.', 'Déc.'][C.MOIS.indexOf(nom)] || nom; }
+
+  function tresoChart(p) {
+    const vals = p.mois.map(function (m) { return m.cumul; });
+    const W = 640, H = 200, ml = 64, mr = 10, mt = 14, mb = 28;
+    const max = Math.max(0, Math.max.apply(null, vals)), min = Math.min(0, Math.min.apply(null, vals));
+    const span = (max - min) || 1;
+    const Y = function (v) { return mt + (max - v) / span * (H - mt - mb); };
+    const bw = (W - ml - mr) / 12;
+    const ticks = [max, (max + min) / 2, min].filter(function (v, i, a) { return a.indexOf(v) === i; });
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" class="chart" role="img" aria-label="Trésorerie en fin de mois">';
+    ticks.forEach(function (t) { svg += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + Y(t) + '" y2="' + Y(t) + '" class="ch-grid"/><text x="' + (ml - 6) + '" y="' + (Y(t) + 4) + '" text-anchor="end" class="ch-lbl">' + esc(eur(t)) + '</text>'; });
+    p.mois.forEach(function (m, i) {
+      const v = m.cumul, y0 = Y(0), y1 = Y(v);
+      svg += '<rect x="' + (ml + i * bw + bw * 0.18) + '" width="' + (bw * 0.64) + '" y="' + Math.min(y0, y1) + '" height="' + Math.max(1, Math.abs(y1 - y0)) + '" class="' + (v < 0 ? 'ch-neg' : 'ch-pos') + '"><title>' + esc(m.nom + ' : ' + eur(v)) + '</title></rect>' +
+        '<text x="' + (ml + i * bw + bw / 2) + '" y="' + (H - 10) + '" text-anchor="middle" class="ch-lbl">' + esc(moisCourt(m.nom)) + '</text>';
+    });
+    svg += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + Y(0) + '" y2="' + Y(0) + '" class="ch-axis"/></svg>';
+    return '<div class="chart-wrap">' + svg + '</div>';
   }
   function kpi(label, val, sub, cls) { return '<div class="kpi ' + (cls || '') + '"><span class="kpi-label">' + esc(label) + '</span><span class="kpi-val">' + val + '</span>' + (sub ? '<span class="kpi-sub">' + esc(sub) + '</span>' : '') + '</div>'; }
 
@@ -671,6 +850,7 @@
     if (t.getAttribute('data-live') === 'carte') { const el = $('#carte-svg'); if (el) el.innerHTML = carteSvg(rd(rid).carte || {}); }
     if (rid === 'r6') { const el = $('#ca-results'); if (el) el.innerHTML = caResultsHtml(); const tot = $('[data-total="r6|plan_actions"]'); if (tot) tot.innerHTML = 'Total : <strong>' + eur(C.planActionsTotal(rd('r6'))) + '</strong>'; }
     if (rid === 'r8') { const el = $('#fin-results'); if (el) el.innerHTML = financeResultsHtml(); refreshFinanceTotals(); }
+    if (rid === 'r2' && path[1].indexOf('reprise_') === 0) { const el = $('#reprise-box'); if (el) el.innerHTML = repriseHtml(); }
     if (rid === 'r9' && path[1].indexOf('coh_') === 0) { const b = $('#depot-box'); if (b) b.innerHTML = depotHtml(); }
     if (rid === 'r9') { const b = $('#depot-box'); if (b && path[1] !== 'oral' && path[1] !== 'questions') b.innerHTML = depotHtml(); }
     refreshStatus();
@@ -732,13 +912,13 @@
 
   function docField(r, f) {
     const d = rd(r.id);
-    if (f.showIf && d[f.showIf.field] !== f.showIf.equals) return '';
+    if (!shown(r, f)) return '';
     const v = d[f.id];
     switch (f.type) {
       case 'heading': return '<h3>' + esc(f.label) + '</h3>';
       case 'text': case 'textarea': case 'number': case 'select':
         if (!filled(v)) return '';
-        if (f.id === 'tva') return '<p><strong>TVA :</strong> ' + esc(v === 'mixte' ? 'taux moyen ' + (d.tva_mixte || '') + ' %' : v + ' %') + '</p>';
+        if (f.id === 'tva') return '<p><strong>TVA :</strong> ' + esc(v === 'mixte' ? 'plusieurs gammes, taux moyen ' + ca().tva.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' %' : v + ' %') + '</p>';
         if (f.id === 'famille') return '';
         return '<p><strong>' + esc(f.label) + ' :</strong> ' + nl2br(v) + '</p>';
       case 'check': return '';
@@ -763,12 +943,13 @@
         return '<div class="canvas doc-canvas">' + window.CANVAS.map(function (c) { return '<div class="cv-box cv-' + c.area + '"><strong>' + esc(c.label) + '</strong><div>' + nl2br(b[c.id]) + '</div></div>'; }).join('') + '</div>';
       }
       case 'carte': return '<h4>' + esc(f.label) + '</h4><div class="doc-svg wide">' + carteSvg(v || {}) + '</div>';
+      case 'reprise': return '<div class="doc-calc">' + repriseHtml().replace(/<p class="muted small">[\s\S]*?<\/p>/, '').replace(/<ul class="msgs">[\s\S]*?<\/ul>/g, '') + '</div>';
       case 'ca': return '<div class="doc-calc">' + caResultsHtml().replace(/<p class="muted small">[\s\S]*?<\/p>/, '').replace(/<ul class="msgs">[\s\S]*?<\/ul>/g, '') + '</div>';
       case 'finance': {
         const fin = finance();
         const dd = rd('r8');
         const pf = '<h4>Plan de financement initial</h4><table class="doc-table"><thead><tr><th>Besoins</th><th class="num">Montant</th><th>Ressources</th><th class="num">Montant</th></tr></thead><tbody>' +
-          zip([['Investissements amortissables', fin.besoins.invest], ['Investissements non amortis', fin.besoins.non_amort], ['Stock de départ', fin.besoins.stock], ['Frais de lancement', fin.besoins.frais], ['Trésorerie de départ', fin.besoins.treso]].filter(function (x) { return x[1]; }),
+          zip([['Rachat du fonds de commerce', fin.besoins.fonds], ['Investissements amortissables', fin.besoins.invest], ['Investissements non amortis', fin.besoins.non_amort], ['Stock de départ', fin.besoins.stock], ['Frais de lancement', fin.besoins.frais], ['Trésorerie de départ', fin.besoins.treso]].filter(function (x) { return x[1]; }),
             [['Apport personnel', fin.ressources.apport], ['Prêt d’honneur', fin.ressources.honneur], ['Aides et subventions', fin.ressources.aides], ['Emprunt bancaire' + (dd.duree_emprunt ? ' (' + C.num(dd.duree_emprunt) + ' ans' + (dd.taux_emprunt ? ', ' + C.num(dd.taux_emprunt).toLocaleString('fr-FR') + ' %' : '') + ')' : ''), fin.ressources.emprunt]].filter(function (x) { return x[1]; })) +
           '<tr class="total"><th>Total</th><td class="num">' + eur(fin.totBesoins) + '</td><th>Total</th><td class="num">' + eur(fin.totRessources) + '</td></tr></tbody></table>';
         return pf + '<div class="doc-calc">' + financeResultsHtml().replace(/<ul class="msgs">[\s\S]*?<\/ul>/g, '') + '</div>';
