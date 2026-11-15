@@ -122,6 +122,12 @@
           if (C.num(d.r_emprunt) > 0) items.push({ label: 'Taux et durée de l’emprunt', ok: filled(d.taux_emprunt) && filled(d.duree_emprunt) });
           break;
         }
+        case 'autoeval': {
+          const a = d[f.id] || {};
+          const n = window.COMPETENCES.filter(function (cp) { return a[cp.code] && filled(a[cp.code].niveau); }).length;
+          items.push({ label: 'Auto-évaluation des 6 compétences (' + n + '/6)', ok: n === 6 });
+          break;
+        }
         case 'coherence': {
           const co = C.coherence(S.data);
           const bad = co.checks.filter(function (c) { return c.etat === 'ko' || c.etat === 'todo'; });
@@ -236,6 +242,8 @@
       case 'ca': return '<div id="ca-results" class="calc-box">' + caResultsHtml() + '</div>';
       case 'finance': return financeHtml(r, f);
       case 'reprise': return '<div id="reprise-box" class="calc-box">' + repriseHtml() + '</div>';
+      case 'oral': return '<div class="calc-box oral-launch"><h4>Mon kit oral</h4><p>Le site prépare vos supports du jour J (un visuel par support, dans l’ordre du plan minuté), votre fiche de chiffres à connaître par cœur et un entraînement aux questions du jury.</p><button type="button" class="btn" id="btn-oral">Ouvrir mon kit oral</button></div>';
+      case 'autoeval': return '<div id="autoeval-box">' + autoevalHtml(r, f) + '</div>';
       case 'coherence': return '<div id="coherence-box">' + coherenceHtml(r) + '</div>';
       case 'depot': return '<div id="depot-box">' + depotHtml() + '</div>';
     }
@@ -371,7 +379,7 @@
     return gammesHtml(c) + '<h4>Mon chiffre d’affaires prévisionnel (calculé automatiquement)</h4>' +
       '<div class="table-wrap"><table class="result"><thead><tr><th>Scénario</th><th>Taux</th><th>Clients / jour</th><th>Panier HT</th><th>Jours</th><th>CA annuel HT</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
       '<p class="formula">' + esc(C.num(rd('r6').base).toLocaleString('fr-FR')) + ' × ' + c.sc.prudent.taux.toLocaleString('fr-FR') + ' % = ' + c.sc.prudent.clients.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' clients par jour × ' + eur(c.panierHT, 2) + ' HT × ' + c.jours + ' jours = <strong>' + eur(c.caPrudent) + ' HT</strong></p>' +
-      msgList(c.alertes, c.ok) +
+      scenariosSvg(c) + msgList(c.alertes, c.ok) +
       '<p class="muted small">C’est ce chiffre prudent qui sera repris automatiquement dans vos finances (rubrique 8).</p>';
   }
 
@@ -529,7 +537,7 @@
         kpi('Marge de sécurité', pct(f.margeSecu), f.margeSecu < 0.10 ? 'fragile' : (f.margeSecu < 0.15 ? 'correcte' : 'solide'), f.margeSecu < 0.10 ? 'bad' : 'good') +
         kpi('Si les ventes baissent de 20 %', (f.stress >= 0 ? '+ ' : '− ') + eur(Math.abs(f.stress)), 'résultat', f.stress < 0 ? 'bad' : 'good') +
       '</div>' +
-      '<p class="muted small">Point mort atteint vers le ' + f.pointMortJour + '<sup>e</sup> jour de l’année en rythme régulier.</p>';
+      '<p class="muted small">Point mort atteint vers le ' + f.pointMortJour + '<sup>e</sup> jour de l’année en rythme régulier.</p>' + pointMortSvg(f, c);
 
     const treso = '<h4>Ma trésorerie et ma banque</h4><ul class="plain">' +
       '<li>Charges à payer chaque mois (sans les amortissements, avec le remboursement de l’emprunt) : <strong>' + eur(f.decaissMensuel) + '</strong></li>' +
@@ -572,7 +580,7 @@
       row(f.societe ? 'Résultat net' : 'Résultat de l’exercice', 'net', 'total') +
       row('Capacité d’autofinancement (résultat net + amortissements)', 'caf', 'muted-row') +
       '</tbody></table></div>' +
-      (!f.societe ? '<p class="muted small">Entreprise individuelle ou micro-entreprise : le bénéfice est imposé à l’impôt sur le revenu du dirigeant, en dehors de l’entreprise.</p>' : '');
+      (!f.societe ? '<p class="muted small">Imposition à l’impôt sur le revenu : le bénéfice est imposé chez le dirigeant, en dehors de l’entreprise. En entreprise individuelle (et en EURL à l’IR), votre « rémunération » est en réalité un prélèvement sur le bénéfice : elle figure ici pour vérifier que l’activité vous fait vivre.</p>' : '');
   }
 
   function empruntHtml(p) {
@@ -596,7 +604,7 @@
       r('Apport personnel', function (x) { return x.ressources.apport; }) +
       r('Prêt d’honneur et aides', function (x) { return x.ressources.quasi; }) +
       r('Emprunt bancaire', function (x) { return x.ressources.emprunt; }) +
-      r('Capacité d’autofinancement', function (x) { return x.ressources.caf; }) +
+      r('Capacité d’autofinancement (année 1 : avant frais de lancement, déjà financés)', function (x) { return x.ressources.caf; }) +
       r('Total des ressources', function (x) { return x.totR; }, 'total') +
       r('Excédent de l’année', function (x) { return x.excedent; }, 'strong') +
       r('Excédent cumulé', function (x) { return x.cumul; }, 'strong') +
@@ -668,6 +676,253 @@
     }
   }
 
+  /* ---------- Graphiques ---------- */
+  function svgOpen(W, H, label) { return '<svg viewBox="0 0 ' + W + ' ' + H + '" class="chart" role="img" aria-label="' + esc(label) + '">'; }
+  function kEur(v) { return Math.abs(v) >= 10000 ? (Math.round(v / 1000)).toLocaleString('fr-FR') + ' k€' : eur(v); }
+
+  /** Point mort : droite du CA et droite des charges totales, en clients par jour. */
+  function pointMortSvg(f, c) {
+    if (!f.CA || !c.panierHT || !c.jours) return '';
+    const W = 640, H = 300, ml = 70, mr = 20, mt = 20, mb = 44;
+    const maxCl = Math.max(c.sc.prudent.clients * 1.5, f.seuilClientsExact * 1.3, 10);
+    const caAt = function (n) { return n * c.panierHT * c.jours; };
+    const chAt = function (n) { return f.fixes + caAt(n) * (1 - f.tmcv); };
+    const maxY = Math.max(caAt(maxCl), chAt(maxCl));
+    const X = function (n) { return ml + n / maxCl * (W - ml - mr); };
+    const Y = function (v) { return mt + (1 - v / maxY) * (H - mt - mb); };
+    let s = svgOpen(W, H, 'Point mort');
+    [0, 0.5, 1].forEach(function (k) { const v = maxY * k; s += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + Y(v) + '" y2="' + Y(v) + '" class="ch-grid"/><text x="' + (ml - 6) + '" y="' + (Y(v) + 4) + '" text-anchor="end" class="ch-lbl">' + esc(kEur(v)) + '</text>'; });
+    // zone de bénéfice
+    const sx = X(f.seuilClientsExact), sy = Y(caAt(f.seuilClientsExact));
+    s += '<polygon points="' + sx + ',' + sy + ' ' + X(maxCl) + ',' + Y(caAt(maxCl)) + ' ' + X(maxCl) + ',' + Y(chAt(maxCl)) + '" class="ch-zone"/>';
+    s += '<line x1="' + X(0) + '" y1="' + Y(caAt(0)) + '" x2="' + X(maxCl) + '" y2="' + Y(caAt(maxCl)) + '" class="ch-line-ca"/>';
+    s += '<line x1="' + X(0) + '" y1="' + Y(chAt(0)) + '" x2="' + X(maxCl) + '" y2="' + Y(chAt(maxCl)) + '" class="ch-line-ch"/>';
+    s += '<line x1="' + sx + '" x2="' + sx + '" y1="' + sy + '" y2="' + (H - mb) + '" class="ch-dash"/><circle cx="' + sx + '" cy="' + sy + '" r="5" class="ch-dot"/>';
+    s += '<text x="' + (sx - 8) + '" y="' + (sy + 22) + '" text-anchor="end" class="ch-lbl strong">Point mort : ' + f.seuilClients + ' clients/jour</text>';
+    const px = X(c.sc.prudent.clients);
+    s += '<line x1="' + px + '" x2="' + px + '" y1="' + mt + '" y2="' + (H - mb) + '" class="ch-dash ok"/><text x="' + (px + 6) + '" y="' + (mt + 12) + '" class="ch-lbl ok">Prévu : ' + Math.round(c.sc.prudent.clients) + '</text>';
+    s += '<text x="' + (W - mr) + '" y="' + (Y(caAt(maxCl)) - 6) + '" text-anchor="end" class="ch-lbl ca">Chiffre d’affaires</text>';
+    s += '<text x="' + (X(0) + 6) + '" y="' + (Y(chAt(0)) - 8) + '" class="ch-lbl ch">Charges totales</text>';
+    s += '<line x1="' + ml + '" x2="' + (W - mr) + '" y1="' + (H - mb) + '" y2="' + (H - mb) + '" class="ch-axis"/>';
+    for (let n = 0; n <= maxCl; n += Math.max(10, Math.round(maxCl / 6 / 10) * 10)) s += '<text x="' + X(n) + '" y="' + (H - mb + 16) + '" text-anchor="middle" class="ch-lbl">' + n + '</text>';
+    s += '<text x="' + ((W + ml) / 2) + '" y="' + (H - 6) + '" text-anchor="middle" class="ch-lbl">clients par jour</text></svg>';
+    return '<div class="chart-wrap">' + s + '</div>';
+  }
+
+  /** Barres horizontales simples. items : [{label, value, cls}] */
+  function barsSvg(items, label) {
+    const W = 640, rowH = 40, ml = 170, mr = 110, H = items.length * rowH + 16;
+    const max = Math.max.apply(null, items.map(function (i) { return Math.abs(i.value); })) || 1;
+    let s = svgOpen(W, H, label);
+    items.forEach(function (it, i) {
+      const y = 8 + i * rowH, w = Math.abs(it.value) / max * (W - ml - mr);
+      s += '<text x="' + (ml - 10) + '" y="' + (y + 23) + '" text-anchor="end" class="ch-lbl big">' + esc(it.label) + '</text>' +
+        '<rect x="' + ml + '" y="' + (y + 6) + '" width="' + Math.max(2, w) + '" height="' + (rowH - 14) + '" rx="4" class="' + (it.cls || 'ch-pos') + '"/>' +
+        '<text x="' + (ml + w + 8) + '" y="' + (y + 23) + '" class="ch-lbl big strong">' + esc(it.text || eur(it.value)) + '</text>';
+    });
+    return '<div class="chart-wrap">' + s + '</svg></div>';
+  }
+
+  function scenariosSvg(c) {
+    if (!c.caPrudent) return '';
+    return barsSvg(['prudent', 'moyen', 'optimiste'].map(function (k) {
+      return { label: k.charAt(0).toUpperCase() + k.slice(1) + ' · ' + Math.round(c.sc[k].clients) + ' clients', value: c.sc[k].ca, cls: k === 'prudent' ? 'ch-pos' : 'ch-soft' };
+    }), 'Les trois scénarios de chiffre d’affaires');
+  }
+
+  /** Plan de financement : deux barres empilées besoins / ressources. */
+  function financementSvg(f) {
+    if (!f.totBesoins) return '';
+    const W = 640, H = 300, top = 20, bh = 240, max = Math.max(f.totBesoins, f.totRessources) || 1;
+    const col = function (x, parts, title) {
+      let y = top + bh, s = '';
+      parts.filter(function (p) { return p[1] > 0; }).forEach(function (p, i) {
+        const h = p[1] / max * bh; y -= h;
+        s += '<rect x="' + x + '" y="' + y + '" width="150" height="' + h + '" class="stk stk' + (i % 6) + '"/>' +
+          (h > 16 ? '<text x="' + (x + 160) + '" y="' + (y + h / 2 + 4) + '" class="ch-lbl">' + esc(p[0] + ' : ' + eur(p[1])) + '</text>' : '');
+      });
+      return s + '<text x="' + (x + 75) + '" y="' + (H - 6) + '" text-anchor="middle" class="ch-lbl strong">' + esc(title) + '</text>';
+    };
+    const b = f.besoins, r = f.ressources;
+    return '<div class="chart-wrap">' + svgOpen(W, H, 'Plan de financement') +
+      col(20, [['Fonds de commerce', b.fonds], ['Investissements', b.invest], ['Dépôt, droit au bail', b.non_amort], ['Stock', b.stock], ['Frais de lancement', b.frais], ['Trésorerie', b.treso]], 'Besoins ' + eur(f.totBesoins)) +
+      col(330, [['Apport', r.apport], ['Prêt d’honneur', r.honneur], ['Aides', r.aides], ['Emprunt', r.emprunt]], 'Ressources ' + eur(f.totRessources)) + '</svg></div>';
+  }
+
+  /* ---------- Kit oral ---------- */
+  function words(s) { return String(s || '').trim().split(/\s+/).filter(Boolean).length; }
+  function firstLines(s, n) { return String(s || '').split(/\n|;/).map(function (x) { return x.replace(/^[-•\s]+/, '').trim(); }).filter(Boolean).slice(0, n); }
+  function shortTxt(s, nWords) { const w = String(s || '').replace(/\s+/g, ' ').trim().split(' '); return w.length > nWords ? w.slice(0, nWords).join(' ').replace(/[\s,;:.\-–(]+$/, '') + '…' : w.join(' '); }
+
+  function slides() {
+    const r0 = rd('r0'), r1 = rd('r1'), r3 = rd('r3'), r4 = rd('r4'), r5 = rd('r5'), r7 = rd('r7'), r8 = rd('r8'), r9 = rd('r9');
+    const c = ca(), f = finance();
+    const S2 = [];
+    const add = function (minute, titre, body, txt) { S2.push({ minute: minute, titre: titre, body: body, words: words(txt) }); };
+    add('0:00', r0.projet_nom || 'Mon projet', '<p class="sl-big">' + esc(r9.accroche || '') + '</p><p class="sl-sub">' + esc(rd('r4').pos_est ? rd('r4').pos_est + (rd('r6').zone ? ' · ' + shortTxt(rd('r6').zone, 6) : '') : '') + '</p>', (r9.accroche || '') + ' ' + (rd('r4').pos_est || ''));
+    const ch = (r3.chiffres_cles || []).filter(function (x) { return filled(x.chiffre); }).slice(0, 3);
+    add('1:30', 'Le diagnostic en 3 chiffres', '<div class="sl-figs">' + ch.map(function (x) { return '<div><strong>' + esc(x.chiffre) + '</strong><span>' + esc(shortTxt(x.question, 8)) + '</span></div>'; }).join('') + '</div>', ch.map(function (x) { return x.chiffre + ' ' + shortTxt(x.question, 8); }).join(' '));
+    const sw = r3.swot || {};
+    const swTxt = ['forces', 'faiblesses', 'opportunites', 'menaces'].map(function (k) { return firstLines(sw[k], 2).map(function (l) { return shortTxt(l, 4); }); });
+    add('2:30', 'SWOT', '<div class="sl-swot">' + [['Forces', 's'], ['Faiblesses', 'w'], ['Opportunités', 'o'], ['Menaces', 't']].map(function (x, i) { return '<div class="' + x[1] + '"><b>' + x[0] + '</b>' + swTxt[i].map(function (l) { return '<span>' + esc(l) + '</span>'; }).join('') + '</div>'; }).join('') + '</div>', swTxt.join(' '));
+    add('3:00', 'Mon positionnement', '<div class="sl-chart">' + carteSvg(r4.carte || {}) + '</div><p class="sl-sub">' + esc(shortTxt(r4.pos_qui, 14)) + '</p>', shortTxt(r4.pos_qui, 14));
+    const b = r5.bmc || {};
+    add('4:00', 'Mon modèle économique', '<div class="canvas sl-canvas">' + window.CANVAS.map(function (cv) { return '<div class="cv-box cv-' + cv.area + '"><b>' + esc(cv.label) + '</b><span>' + esc(shortTxt(firstLines(b[cv.id], 1)[0], 5)) + '</span></div>'; }).join('') + '</div>', '');
+    add('5:30', 'Mon chiffre d’affaires', '<p class="sl-formula">' + C.num(rd('r6').base).toLocaleString('fr-FR') + ' × ' + c.sc.prudent.taux.toLocaleString('fr-FR') + ' % = <b>' + Math.round(c.sc.prudent.clients) + ' clients</b> × ' + eur(c.panierHT, 2) + ' HT × ' + c.jours + ' j = <b>' + eur(c.caPrudent) + '</b></p>' + scenariosSvg(c), 'formule');
+    const parts = (window.RUBRIQUES.find(function (x) { return x.id === 'r7'; }).fields.find(function (x) { return x.id === 'partenaires'; }).rows).map(function (rw) { return [rw.label, ((r7.partenaires || {})[rw.id] || {}).nom]; });
+    add('7:00', 'Partenaires et organisation', '<table class="sl-table">' + parts.map(function (p) { return '<tr><th>' + esc(p[0].replace(/ \(.*\)/, '')) + '</th><td>' + esc(shortTxt(p[1], 4)) + '</td></tr>'; }).join('') + '</table><p class="sl-sub">' + esc(r7.horaires || '') + (C.num(r7.cout_salarie_annuel) ? '' : ' · seul(e) la 1re année') + '</p>', parts.map(function (p) { return shortTxt(p[1], 4); }).join(' '));
+    add('8:00', 'Mon plan de financement', financementSvg(f), '');
+    add('8:45', 'Mon point mort', pointMortSvg(f, c) + '<p class="sl-big small">' + f.seuilClients + ' clients/jour pour ' + Math.round(c.sc.prudent.clients) + ' prévus · marge ' + pct(f.margeSecu) + '</p>', 'point mort clients prévus marge');
+    const et = String(r9.etapes || '').split(';').map(function (x) { return x.trim(); }).filter(Boolean).slice(0, 3);
+    add('9:30', 'Et demain ?', '<div class="sl-concl"><div><strong>' + pct(f.margeSecu) + '</strong><span>de marge de sécurité</span></div><div><strong>' + esc(r8.statut || '—') + '</strong><span>statut retenu</span></div></div><ol class="sl-steps">' + et.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol>', et.join(' '));
+    return S2;
+  }
+
+  function slideHtml(sl, i, n) {
+    return '<section class="slide"><header><span class="sl-num">' + (i + 1) + '/' + n + '</span><h2>' + esc(sl.titre) + '</h2></header><div class="sl-body">' + sl.body + '</div><footer>' + esc(rd('r0').projet_nom || '') + '</footer></section>';
+  }
+
+  function chiffresCles() {
+    const c = ca(), f = finance();
+    const p = f.CA ? C.previsionnel(rd('r8'), c, f) : null;
+    const L = [
+      ['Chiffre d’affaires prudent', eur(f.CA) + ' HT', Math.round(c.sc.prudent.clients) + ' clients/jour × ' + eur(c.panierHT, 2) + ' HT × ' + c.jours + ' jours'],
+      ['Point mort', f.seuilClients + ' clients par jour', 'Seuil ' + eur(f.seuil) + ' — atteint vers le ' + f.pointMortJour + 'e jour'],
+      ['Marge de sécurité', pct(f.margeSecu), 'Si les ventes baissent de 20 % : ' + (f.stress >= 0 ? '+ ' : '− ') + eur(Math.abs(f.stress))],
+      ['Plan de financement', eur(f.totBesoins), 'Apport et aides : ' + pct(f.partFP) + ' · emprunt ' + eur(f.ressources.emprunt)],
+      ['Résultat', (f.societe ? 'net ' : '') + eur(f.resultatNet), p ? 'Année 2 : ' + eur(p.ans[1].net) + ' · année 3 : ' + eur(p.ans[2].net) : ''],
+      ['Trésorerie', p ? 'point bas ' + eur(p.minSolde) : '—', p ? 'en ' + p.minMois.toLowerCase() : ''],
+      ['Ma rémunération', eur(C.num(rd('r8').remu_net)) + ' net / mois', 'Statut : ' + (rd('r8').statut || '—')],
+      ['Mon étude', (rd('r3').nb_reponses || '—') + ' réponses', 'Budget accepté : ' + (rd('r3').budget_max ? eur(rd('r3').budget_max, 2) : '—')]
+    ];
+    return '<div class="fiche">' + L.map(function (l) { return '<div class="fiche-item"><span class="fi-l">' + esc(l[0]) + '</span><strong>' + esc(l[1]) + '</strong><span class="fi-s">' + esc(l[2]) + '</span></div>'; }).join('') + '</div>';
+  }
+
+  /** Questions pièges tirées des points faibles du dossier. */
+  function questionsPieges() {
+    const c = ca(), f = finance(), Q = [];
+    const p = f.CA ? C.previsionnel(rd('r8'), c, f) : null;
+    if (f.margeSecu < 0.15) Q.push('Votre marge de sécurité n’est que de ' + pct(f.margeSecu) + ' : que faites-vous dès le premier mois si la fréquentation est plus faible ?');
+    if (f.stress < 0) Q.push('Avec 20 % de ventes en moins, vous perdez ' + eur(-f.stress) + '. Comment tenez-vous ?');
+    if (p && p.minSolde < f.decaissMensuel) Q.push('Votre trésorerie descend à ' + eur(p.minSolde) + ' en ' + p.minMois.toLowerCase() + ' : c’est moins d’un mois de charges. Que faites-vous ?');
+    if (f.ressources.emprunt && f.partFP < 0.3) Q.push('Votre apport ne représente que ' + pct(f.partFP) + ' du besoin : pourquoi une banque vous suivrait-elle ?');
+    if (C.num(rd('r8').croissance_a2) > 15) Q.push('Vous prévoyez +' + rd('r8').croissance_a2 + ' % de CA en année 2 : sur quoi repose ce chiffre ?');
+    if (c.sc.optimiste.clients > c.sc.prudent.clients * 2) Q.push('Votre scénario optimiste fait plus du double du prudent : n’êtes-vous pas trop large ?');
+    if (C.num(rd('r3').nb_reponses) < 50) Q.push('Seulement ' + (rd('r3').nb_reponses || 0) + ' réponses à votre questionnaire : est-ce représentatif ?');
+    if (rd('r1').type_projet === 'Reprise') { const rp = C.repriseCalc(rd('r2'), rd('r8')); if (rp.tendance < 0) Q.push('Le CA de l’affaire baisse de ' + pct(-rp.tendance) + ' : pourquoi feriez-vous mieux que le cédant ?'); }
+    const nbContact = Object.values(rd('r7').partenaires || {}).filter(function (x) { return x && filled(x.contact); }).length;
+    if (nbContact < 3) Q.push('Lesquels de vos partenaires avez-vous réellement contactés ? Avec quel résultat ?');
+    if (!C.num(rd('r7').cout_salarie_annuel)) Q.push('Vous êtes seul(e) : que se passe-t-il si vous tombez malade une semaine ?');
+    return Q;
+  }
+
+  function renderOral(tab) {
+    tab = tab || 'supports';
+    S.view = 'oral';
+    renderNav();
+    const main = $('#main');
+    const sl = slides();
+    let h = '<div class="apercu-bar no-print"><button type="button" class="btn ghost" id="or-back">← Retour</button>' +
+      ['supports', 'fiche', 'entrainement'].map(function (t) { return '<button type="button" class="btn ' + (tab === t ? '' : 'ghost') + ' small" data-oral-tab="' + t + '">' + ({ supports: 'Mes supports', fiche: 'Mes chiffres par cœur', entrainement: 'Entraînement aux questions' })[t] + '</button>'; }).join('') + '</div>';
+    if (tab === 'supports') {
+      const lourds = sl.filter(function (x) { return x.words > 30; });
+      h += '<div class="no-print oral-intro"><h1>Mes supports pour l’oral</h1><p>Générés automatiquement à partir de votre dossier, dans l’ordre du plan minuté : ' + sl.length + ' supports, un visuel chacun. Votre manuel le rappelle : <strong>8 à 10 supports maximum, presque pas de texte</strong>.</p>' +
+        (lourds.length ? '<ul class="msgs"><li class="warn">Trop de texte sur : ' + lourds.map(function (x) { return '« ' + esc(x.titre) + ' » (' + x.words + ' mots)'; }).join(', ') + '. Raccourcissez la source dans votre dossier (30 mots maximum par support).</li></ul>' : '<ul class="msgs"><li class="ok">Tous vos supports restent sous 30 mots.</li></ul>') +
+        '<div class="oral-actions"><button type="button" class="btn" id="or-present">▶ Présenter (plein écran, chrono 10 min)</button><button type="button" class="btn ghost" id="or-print">Imprimer (une page par support)</button></div></div>' +
+        '<div class="slides-grid">' + sl.map(function (x, i) { return '<div class="slide-cell"><p class="muted small no-print">' + x.minute + ' · ' + x.words + ' mots</p>' + slideHtml(x, i, sl.length) + '</div>'; }).join('') + '</div>';
+    } else if (tab === 'fiche') {
+      h += '<div class="oral-intro"><h1>Mes chiffres à connaître par cœur</h1><p class="no-print">À relire la veille, et seulement ça. Le jury recoupe ces chiffres avec votre dossier pendant l’entretien.</p></div>' + chiffresCles() +
+        '<div class="no-print oral-actions"><button type="button" class="btn ghost" onclick="window.print()">Imprimer ma fiche</button></div>';
+    } else {
+      const base = (window.RUBRIQUES.find(function (x) { return x.id === 'r9'; }).fields.find(function (x) { return x.id === 'questions'; }).rows).map(function (q) { return { q: q.label, rep: ((rd('r9').questions || {})[q.id] || {}).reponse || '' }; });
+      const pieges = questionsPieges().map(function (q) { return { q: q, rep: '', piege: true }; });
+      S.training = { list: base.concat(pieges), cur: null };
+      h += '<div class="oral-intro"><h1>Entraînement à l’entretien</h1><p>Une question tirée au hasard, une minute pour répondre à voix haute, puis comparez avec la réponse que vous avez préparée. ' + (pieges.length ? '<strong>' + pieges.length + ' questions pièges</strong> ont été ajoutées à partir des points faibles de votre dossier.' : '') + '</p>' +
+        '<div class="oral-actions"><button type="button" class="btn" id="tr-next">Tirer une question</button><label class="check inline"><input type="checkbox" id="tr-pieges"> <span>Seulement les questions pièges</span></label></div></div>' +
+        '<div class="training card" id="training"><p class="muted">Cliquez sur « Tirer une question ».</p></div>';
+    }
+    main.innerHTML = h;
+    typo(main);
+    $('#or-back').addEventListener('click', function () { go(S.current); });
+    $$('[data-oral-tab]').forEach(function (b) { b.addEventListener('click', function () { renderOral(b.getAttribute('data-oral-tab')); }); });
+    if ($('#or-present')) $('#or-present').addEventListener('click', function () { present(sl); });
+    if ($('#or-print')) $('#or-print').addEventListener('click', function () { document.body.classList.add('print-slides'); window.print(); setTimeout(function () { document.body.classList.remove('print-slides'); }, 500); });
+    if ($('#tr-next')) $('#tr-next').addEventListener('click', drawQuestion);
+    window.scrollTo(0, 0);
+  }
+
+  function drawQuestion() {
+    const T = S.training;
+    const onlyP = $('#tr-pieges') && $('#tr-pieges').checked;
+    const pool = T.list.filter(function (x) { return !onlyP || x.piege; });
+    if (!pool.length) { $('#training').innerHTML = '<p class="muted">Aucune question piège : votre dossier ne présente pas de point faible repéré automatiquement.</p>'; return; }
+    let q; do { q = pool[Math.floor(Math.random() * pool.length)]; } while (pool.length > 1 && q === T.cur);
+    T.cur = q;
+    clearInterval(T.timer);
+    let left = 60;
+    $('#training').innerHTML = (q.piege ? '<span class="tag warn">Question piège</span>' : '') + '<p class="tr-q">« ' + esc(q.q) + ' »</p><p class="tr-timer" id="tr-timer">1:00</p>' +
+      '<button type="button" class="btn ghost small" id="tr-show">Voir ma réponse préparée</button><div id="tr-rep" hidden><p class="tr-rep">' + (q.rep ? nl2br(q.rep) : '<em>' + (q.piege ? 'Question générée à partir de vos chiffres : préparez une réponse avec votre parade.' : 'Vous n’avez pas encore préparé cette réponse (rubrique 9).') + '</em>') + '</p></div>';
+    T.timer = setInterval(function () { left--; const el = $('#tr-timer'); if (!el) { clearInterval(T.timer); return; } el.textContent = left > 0 ? '0:' + String(left).padStart(2, '0') : 'Temps écoulé'; if (left <= 10) el.classList.add('late'); if (left <= 0) clearInterval(T.timer); }, 1000);
+    $('#tr-show').addEventListener('click', function () { $('#tr-rep').hidden = false; });
+  }
+
+  function present(sl) {
+    let i = 0;
+    const t0 = Date.now();
+    const ov = document.createElement('div');
+    ov.className = 'present';
+    document.body.appendChild(ov);
+    const draw = function () { ov.innerHTML = '<div class="pr-stage">' + slideHtml(sl[i], i, sl.length) + '</div><div class="pr-bar"><button type="button" class="pr-btn" data-pr="prev" aria-label="Précédent">←</button><span id="pr-chrono" class="pr-chrono"></span><button type="button" class="pr-btn" data-pr="next" aria-label="Suivant">→</button><button type="button" class="pr-btn" data-pr="close" aria-label="Quitter">✕</button></div>'; tick(); };
+    const tick = function () { const s = Math.floor((Date.now() - t0) / 1000), el = ov.querySelector('#pr-chrono'); if (!el) return; el.textContent = Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') + ' / 10:00'; el.className = 'pr-chrono' + (s >= 600 ? ' over' : (s >= 570 ? ' late' : '')); };
+    const timer = setInterval(tick, 1000);
+    const close = function () { clearInterval(timer); document.removeEventListener('keydown', key); ov.remove(); if (document.fullscreenElement) document.exitFullscreen().catch(function () {}); };
+    const key = function (e) { if (e.key === 'ArrowRight' || e.key === ' ' || e.key === 'PageDown') { i = Math.min(sl.length - 1, i + 1); draw(); } else if (e.key === 'ArrowLeft' || e.key === 'PageUp') { i = Math.max(0, i - 1); draw(); } else if (e.key === 'Escape') close(); };
+    ov.addEventListener('click', function (e) { const a = e.target.closest('[data-pr]'); if (!a) return; const k = a.getAttribute('data-pr'); if (k === 'next') { i = Math.min(sl.length - 1, i + 1); draw(); } else if (k === 'prev') { i = Math.max(0, i - 1); draw(); } else close(); });
+    document.addEventListener('keydown', key);
+    if (ov.requestFullscreen) ov.requestFullscreen().catch(function () {});
+    draw();
+  }
+
+  /* ---------- Auto-évaluation (grille de l'annexe 19) ---------- */
+  function constats(code) {
+    const c = ca(), f = finance(), d = S.data;
+    const r = function (id) { return d[id] || {}; };
+    const nb = function (arr) { return (arr || []).filter(function (x) { return x && Object.values(x).some(filled); }).length; };
+    switch (code) {
+      case 'C1': return [nb(r('r2').sources) + ' sources datées', (r('r3').nb_reponses || 0) + ' réponses au questionnaire', nb(r('r3').concurrents) + ' concurrents analysés'];
+      case 'C2': return [nb(r('r4').segments) + ' segments étudiés', filled(r('r4').pos_qui) ? 'Phrase de positionnement complète' : 'Phrase de positionnement incomplète', ((r('r4').carte || {}).points || []).filter(function (p) { return filled(p.nom); }).length + ' offres sur la carte'];
+      case 'C3': return [f.CA ? 'CA prudent : ' + eur(f.CA) + ' HT' : 'CA non calculé', c.sc.prudent.clients ? Math.round(c.sc.prudent.clients) + ' à ' + Math.round(c.sc.optimiste.clients) + ' clients par jour selon le scénario' : '', 'Plan d’actions : ' + eur(C.planActionsTotal(r('r6')))];
+      case 'C4': { const P = Object.values(r('r7').partenaires || {}); return [P.filter(function (x) { return x && filled(x.nom); }).length + '/5 besoins couverts par un partenaire nommé', P.filter(function (x) { return x && filled(x.contact); }).length + ' partenaires contactés', P.filter(function (x) { return x && x.devis === 'Oui'; }).length + ' devis ou conditions écrites']; }
+      case 'C5': return [Object.values(r('r7').planning || {}).filter(function (x) { return x && filled(x.ouverture); }).length + ' jours planifiés', (r('r7').heures_travail || '?') + ' h de travail pour ' + (r('r7').heures_ouverture || '?') + ' h d’ouverture', filled(r('r7').signal_renfort) ? 'Signal de recrutement défini' : 'Pas de signal de recrutement'];
+      case 'C6': { const p = f.CA ? C.previsionnel(r('r8'), c, f) : null; return [Math.abs(f.totBesoins - f.totRessources) < 1 && f.totBesoins ? 'Plan de financement équilibré' : 'Plan de financement non équilibré', 'Marge de sécurité : ' + pct(f.margeSecu), p ? 'Trésorerie au plus bas : ' + eur(p.minSolde) : '']; }
+    }
+    return [];
+  }
+  const VISER = {
+    C1: 'Pour viser « Excellente maîtrise » : produire vos propres informations (comptages, questionnaire, relevés de prix) et dire ce que vous en concluez.',
+    C2: 'Pour viser « Excellente maîtrise » : montrer que vous avez écarté un segment et pourquoi, en vous appuyant sur votre diagnostic.',
+    C3: 'Pour viser « Excellente maîtrise » : un CA construit sur une mesure réelle, des scénarios justifiés et un stress test.',
+    C4: 'Pour viser « Excellente maîtrise » : des partenaires contactés, des conditions écrites, et une solution de rechange pour le plus critique.',
+    C5: 'Pour viser « Excellente maîtrise » : anticiper (planning tenable, signal de recrutement chiffré, plan de continuité).',
+    C6: 'Pour viser « Excellente maîtrise » : anticiper les contraintes (trésorerie mois par mois, parade au stress test, ajustement du modèle).'
+  };
+  function autoevalHtml(r, f) {
+    const a = rd(r.id)[f.id] || {};
+    const ro = S.readOnly ? ' disabled' : '';
+    return '<p class="help">Positionnez-vous honnêtement sur chaque compétence, avec les mots exacts de la grille officielle (annexe 19 de la circulaire). Le site rappelle ce qu’il constate dans votre dossier.</p>' +
+      '<details class="details"><summary>Les descripteurs officiels de chaque niveau</summary><div class="table-wrap"><table class="result grille"><thead><tr>' + window.GRILLE_NIVEAUX.map(function (n) { return '<th>' + esc(n.label) + '</th>'; }).join('') + '</tr></thead><tbody>' +
+      window.GRILLE_NIVEAUX[0].desc.map(function (x, i) { return '<tr>' + window.GRILLE_NIVEAUX.map(function (n) { return '<td>' + esc(n.desc[i]) + '</td>'; }).join('') + '</tr>'; }).join('') + '</tbody></table></div></details>' +
+      window.COMPETENCES.map(function (cp) {
+        const v = a[cp.code] || {};
+        const opts = [['', 'Choisir…']].concat(window.GRILLE_NIVEAUX.map(function (n) { return [n.id, n.label]; })).map(function (o) { return '<option value="' + o[0] + '"' + (v.niveau === o[0] ? ' selected' : '') + '>' + esc(o[1]) + '</option>'; }).join('');
+        return '<div class="ae-row"><div class="ae-head"><strong>' + cp.code + ' · ' + esc(cp.titre) + '</strong><span class="muted small">« ' + esc(cp.critere) + ' »</span></div>' +
+          '<ul class="ae-constats">' + constats(cp.code).filter(Boolean).map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ul>' +
+          '<div class="ae-inputs"><select data-rerender="1" data-path="' + pathAttr([r.id, f.id, cp.code, 'niveau']) + '"' + ro + '>' + opts + '</select>' +
+          '<input type="text" data-path="' + pathAttr([r.id, f.id, cp.code, 'preuve']) + '" value="' + esc(v.preuve) + '" placeholder="Ma meilleure preuve pour le jury"' + ro + '></div>' +
+          (v.niveau && v.niveau !== 'em' ? '<p class="muted small">' + esc(VISER[cp.code]) + '</p>' : '') + '</div>';
+      }).join('');
+  }
+
   /* ---------- Bloc cohérence ---------- */
   function coherenceHtml(r) {
     const co = C.coherence(S.data);
@@ -712,7 +967,7 @@
       '<a class="brand" href="#" id="brand"><span class="logo">EF3</span><span class="brand-txt"><strong>' + esc(cfg.NOM_SITE) + '</strong><span>' + esc(cfg.ETABLISSEMENT) + '</span></span></a>' +
       '<div class="top-right">' +
         (!prof ? '<div class="global-progress" title="Avancement global"><div class="bar"><span id="global-bar"></span></div><span id="global-pct"></span></div><span class="save-status" id="save-status"></span>' : '') +
-        (!prof ? '<button type="button" class="btn ghost small" id="btn-apercu">Aperçu de mon dossier</button>' : '') +
+        (!prof ? '<button type="button" class="btn ghost small" id="btn-apercu">Aperçu de mon dossier</button><button type="button" class="btn ghost small" id="btn-oral-top">Kit oral</button>' : '') +
         '<div class="user"><span>' + esc(Store.profile ? (Store.profile.prenom + ' ' + Store.profile.nom) : '') + (Store.mode === 'demo' ? ' <span class="tag">démo</span>' : '') + '</span>' +
         (Store.mode === 'cloud' ? '<button type="button" class="btn ghost small" id="btn-logout">Déconnexion</button>' : '<button type="button" class="btn ghost small" id="btn-reset">Effacer la démo</button>') + '</div>' +
       '</div></header>' +
@@ -804,6 +1059,7 @@
     const nextLocked = cfg.PROGRESSION_GUIDEE && p < 100;
     if (next) { next.disabled = nextLocked; next.title = nextLocked ? 'Complétez cette rubrique pour avancer' : ''; }
     el.innerHTML = '<div class="status-head"><strong>' + (p >= 100 ? 'Rubrique complète ✓' : 'Rubrique complète à ' + p + ' %') + '</strong><div class="bar"><span style="width:' + p + '%"></span></div></div>' +
+      (pagesOf(r) && /Page/.test(r.page) ? (function () { const n = rubWords(r), b = pagesOf(r) * MOTS_PAR_PAGE; return '<p class="small ' + (n > b * 1.3 ? 'lg-ko' : (n > b ? 'lg-mid' : 'muted')) + '">Longueur : ' + n + ' mots rédigés, pour ' + esc(r.page.toLowerCase()) + ' dans le dossier (≈ ' + b + ' mots maximum).</p>'; })() : '') +
       (c.missing.length ? '<p class="muted">Pour avancer, il reste :</p><ul class="missing">' + c.missing.map(function (m) { return '<li>' + esc(m.label) + '</li>'; }).join('') + '</ul>' : (S.current !== 'r9' ? '<p class="muted">Vous pouvez passer à la rubrique suivante.</p>' : '<p class="muted">Vous pouvez déposer votre dossier.</p>'));
   }
 
@@ -864,6 +1120,7 @@
     if (t.id === 'btn-logout') { await saveNow(); await Store.signOut(); location.hash = ''; boot(); return; }
     if (t.id === 'btn-reset') { if (confirm('Effacer tout le travail de démonstration enregistré dans ce navigateur ?')) { Store.resetDemo(); S.data = {}; computeProgress(); go('r0'); } return; }
     if (t.id === 'btn-apercu' || t.id === 'btn-apercu2') { await saveNow(); renderApercu(S.data, Store.profile); return; }
+    if (t.id === 'btn-oral' || t.id === 'btn-oral-top') { await saveNow(); renderOral('supports'); return; }
     const g = t.getAttribute('data-goto');
     if (g) { go(g); return; }
     const add = t.getAttribute('data-add-row');
@@ -887,32 +1144,89 @@
   }
 
   /* ================= Aperçu du dossier (imprimable) ================= */
+  function pagesOf(r) { const m = String(r.page || '').match(/(\d+)(?:-(\d+))?/); return m ? (m[2] ? (+m[2] - +m[1] + 1) : 1) : 0; }
+  const MOTS_PAR_PAGE = 380;
+  /** Nombre de mots rédigés dans une rubrique (textes et cellules de tableaux). */
+  function rubWords(r) {
+    const d = rd(r.id);
+    let n = 0;
+    const cnt = function (v) { if (typeof v === 'string' && isNaN(Number(v.replace(',', '.')))) n += words(v); };
+    r.fields.forEach(function (f) {
+      if (!shown(r, f) || f.id === 'sources' || f.id === 'saison') return;
+      const v = d[f.id];
+      if (f.type === 'text' || f.type === 'textarea') cnt(v);
+      else if (v && typeof v === 'object') JSON.stringify(v).replace(/"([^"]*)"\s*:\s*"([^"]*)"/g, function (m, k, val) { if (['nom', 'note', 'x', 'y', 'choix', 'type', 'tva', 'devis', 'niveau'].indexOf(k) < 0) cnt(val); return m; });
+    });
+    return n;
+  }
+  function longueurHtml() {
+    return '<div class="table-wrap"><table class="result longueur"><thead><tr><th>Rubrique</th><th class="num">Mots rédigés</th><th class="num">Conseillé</th><th></th></tr></thead><tbody>' +
+      R.slice(1, 9).map(function (r) {
+        const n = rubWords(r), b = pagesOf(r) * MOTS_PAR_PAGE;
+        const cls = n <= b ? 'ok' : (n <= b * 1.3 ? 'mid' : 'ko');
+        return '<tr><td>' + r.num + '. ' + esc(r.titre) + ' <span class="muted small">' + esc(r.page) + '</span></td><td class="num">' + n + '</td><td class="num">≤ ' + b + '</td><td><span class="lg ' + cls + '">' + (cls === 'ok' ? 'OK' : (cls === 'mid' ? 'un peu long' : 'trop long')) + '</span></td></tr>';
+      }).join('') + '</tbody></table></div>';
+  }
+
   function renderApercu(data, profil, opts) {
     opts = opts || {};
+    const mode = opts.mode || 'dossier';
     const keep = S.data;
     S.data = data || {};
+    S.docMode = mode;
     const main = $('#main');
     S.view = 'apercu';
     renderNav();
     const r0 = rd('r0');
-    let h = '<div class="apercu-bar no-print"><button type="button" class="btn ghost" id="ap-back">← Retour</button><button type="button" class="btn" onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>' +
+    const sub = function (m, l) { return '<button type="button" class="btn ' + (m === mode ? '' : 'ghost') + ' small" data-ap-mode="' + m + '">' + l + '</button>'; };
+    let h = '<div class="apercu-bar no-print"><button type="button" class="btn ghost" id="ap-back">← Retour</button>' + sub('dossier', 'Dossier à déposer (≈ 10 pages)') + sub('annexes', 'Annexes') + '<button type="button" class="btn" onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>' +
       (S.readOnly ? '<p class="callout no-print">Réponses saisies sur le site par ' + esc(profil ? profil.prenom + ' ' + profil.nom : '') + ' (lecture seule). Le dossier officiel est le PDF déposé.</p>'
-        : '<p class="callout no-print">Cet aperçu rassemble tout ce que vous avez saisi, dans l’ordre du dossier. Servez-vous-en comme base pour rédiger et mettre en page votre dossier final (une dizaine de pages), puis déposez-le en PDF dans la rubrique 9.</p>') +
-      '<div class="doc"><section class="doc-cover"><h1>' + esc(r0.projet_nom || 'Mon projet') + '</h1><p>' + nl2br(rd('r1').idee_phrase || '') + '</p><p class="muted">Dossier EF3 — Entrepreneuriat · BTS MCO<br>' + esc(profil ? (profil.prenom + ' ' + profil.nom) : '') + (profil && profil.classe ? ' · ' + esc(profil.classe) : '') + '<br>' + esc(cfg.ETABLISSEMENT) + '</p></section>';
-    R.slice(1, 9).forEach(function (r) {
-      const body = r.fields.map(function (f) { return docField(r, f); }).join('').replace(/<h3>[^<]*<\/h3>(?=<h3>|$)/g, '');
-      h += '<section class="doc-sec"><h2>' + r.num + '. ' + esc(r.titre) + ' <span class="muted small">' + esc(r.page) + '</span></h2>' + (body || '<p class="muted">Rubrique non encore complétée.</p>') + '</section>';
-    });
+        : (mode === 'dossier'
+          ? '<div class="callout no-print"><p><strong>Le dossier à déposer</strong> : une dizaine de pages, dans l’ordre de la grille. Les tableaux détaillés (sources, trésorerie mois par mois, emprunt…) sont rangés dans les annexes. Vérifiez la longueur de chaque partie :</p>' + longueurHtml() + '<p class="muted small">Estimation : environ ' + MOTS_PAR_PAGE + ' mots par page avec les tableaux. Une partie « trop longue » se resserre dans la rubrique concernée.</p></div>'
+          : '<p class="callout no-print"><strong>Les annexes</strong> : les preuves et les tableaux détaillés, que le jury consulte s’il le souhaite. Elles ne comptent pas dans les 10 pages.</p>'));
+    h += '<div class="doc">';
+    if (mode === 'dossier') {
+      h += '<section class="doc-cover"><h1>' + esc(r0.projet_nom || 'Mon projet') + '</h1><p>' + nl2br(rd('r1').idee_phrase || '') + '</p><p class="muted">Dossier EF3 — Entrepreneuriat · BTS MCO<br>' + esc(profil ? (profil.prenom + ' ' + profil.nom) : '') + (profil && profil.classe ? ' · ' + esc(profil.classe) : '') + '<br>' + esc(cfg.ETABLISSEMENT) + '</p>' +
+        '<ol class="doc-toc">' + R.slice(1, 9).map(function (r) { return '<li><span>' + esc(r.titre) + '</span><span class="muted">' + esc(r.page) + '</span></li>'; }).join('') + '<li><span>Annexes</span><span class="muted">hors pagination</span></li></ol></section>';
+      R.slice(1, 9).forEach(function (r) {
+        const body = r.fields.map(function (f) { return docField(r, f); }).join('').replace(/<h3>[^<]*<\/h3>(?=<h3>|$)/g, '');
+        h += '<section class="doc-sec"><h2>' + r.num + '. ' + esc(r.titre) + ' <span class="muted small">' + esc(r.page) + '</span></h2>' + (body || '<p class="muted">Rubrique non encore complétée.</p>') + '</section>';
+      });
+    } else {
+      h += annexesHtml();
+    }
     h += '</div>';
     main.innerHTML = h;
     S.data = keep;
     $('#ap-back').addEventListener('click', function () { if (opts.onBack) opts.onBack(); else go(S.current); });
+    $$('[data-ap-mode]').forEach(function (b) { b.addEventListener('click', function () { renderApercu(data, profil, Object.assign({}, opts, { mode: b.getAttribute('data-ap-mode') })); }); });
     window.scrollTo(0, 0);
   }
 
-  function docField(r, f) {
+  function annexesHtml() {
+    const c = ca(), f = finance();
+    let h = '<section class="doc-cover small-cover"><h1>Annexes</h1><p>' + esc(rd('r0').projet_nom || '') + '</p></section>';
+    let n = 0;
+    const sec = function (title, body) { if (!body) return; n++; h += '<section class="doc-sec"><h2>Annexe ' + n + ' — ' + esc(title) + '</h2>' + body + '</section>'; };
+    const r2 = rub('r2'), r6 = rub('r6');
+    sec('Mes sources', docField(r2, r2.fields.find(function (x) { return x.id === 'sources'; }), true));
+    sec('Mon questionnaire : les chiffres clés', docField(rub('r3'), rub('r3').fields.find(function (x) { return x.id === 'chiffres_cles'; }), true));
+    sec('Ma saisonnalité', docField(r6, r6.fields.find(function (x) { return x.id === 'saison'; }), true));
+    if (f.CA) {
+      const p = C.previsionnel(rd('r8'), c, f);
+      sec('Compte de résultat détaillé de l’année 1 (avec les sources)', '<div class="doc-calc">' + financeResultsHtml().split('<div class="calc-box">')[1].split('<h4>Mon seuil')[0] + '</div>');
+      sec('Besoin en fonds de roulement', '<div class="doc-calc">' + bfrHtml(p, f) + '</div>');
+      sec('Plan de financement à 3 ans', '<div class="doc-calc">' + pf3Html(p) + '</div>');
+      sec('Remboursement de l’emprunt', '<div class="doc-calc">' + empruntHtml(p) + '</div>');
+      sec('Plan de trésorerie sur 12 mois', '<div class="doc-calc">' + tresoHtml(p) + '</div>');
+    }
+    return h;
+  }
+
+  function docField(r, f, force) {
     const d = rd(r.id);
     if (!shown(r, f)) return '';
+    if (!force && S.docMode !== 'tout' && ['sources', 'saison', 'chiffres_cles'].indexOf(f.id) >= 0) return '';
     const v = d[f.id];
     switch (f.type) {
       case 'heading': return '<h3>' + esc(f.label) + '</h3>';
@@ -920,6 +1234,7 @@
         if (!filled(v)) return '';
         if (f.id === 'tva') return '<p><strong>TVA :</strong> ' + esc(v === 'mixte' ? 'plusieurs gammes, taux moyen ' + ca().tva.toLocaleString('fr-FR', { maximumFractionDigits: 2 }) + ' %' : v + ' %') + '</p>';
         if (f.id === 'famille') return '';
+        if (f.type === 'select' && Array.isArray(f.options) && Array.isArray(f.options[1])) { const o = f.options.find(function (x) { return String(x[0]) === String(v); }); if (o) return '<p><strong>' + esc(f.label) + ' :</strong> ' + esc(o[1]) + '</p>'; }
         return '<p><strong>' + esc(f.label) + ' :</strong> ' + nl2br(v) + '</p>';
       case 'check': return '';
       case 'grid': {
@@ -943,6 +1258,7 @@
         return '<div class="canvas doc-canvas">' + window.CANVAS.map(function (c) { return '<div class="cv-box cv-' + c.area + '"><strong>' + esc(c.label) + '</strong><div>' + nl2br(b[c.id]) + '</div></div>'; }).join('') + '</div>';
       }
       case 'carte': return '<h4>' + esc(f.label) + '</h4><div class="doc-svg wide">' + carteSvg(v || {}) + '</div>';
+      case 'oral': case 'autoeval': return '';
       case 'reprise': return '<div class="doc-calc">' + repriseHtml().replace(/<p class="muted small">[\s\S]*?<\/p>/, '').replace(/<ul class="msgs">[\s\S]*?<\/ul>/g, '') + '</div>';
       case 'ca': return '<div class="doc-calc">' + caResultsHtml().replace(/<p class="muted small">[\s\S]*?<\/p>/, '').replace(/<ul class="msgs">[\s\S]*?<\/ul>/g, '') + '</div>';
       case 'finance': {
@@ -952,7 +1268,13 @@
           zip([['Rachat du fonds de commerce', fin.besoins.fonds], ['Investissements amortissables', fin.besoins.invest], ['Investissements non amortis', fin.besoins.non_amort], ['Stock de départ', fin.besoins.stock], ['Frais de lancement', fin.besoins.frais], ['Trésorerie de départ', fin.besoins.treso]].filter(function (x) { return x[1]; }),
             [['Apport personnel', fin.ressources.apport], ['Prêt d’honneur', fin.ressources.honneur], ['Aides et subventions', fin.ressources.aides], ['Emprunt bancaire' + (dd.duree_emprunt ? ' (' + C.num(dd.duree_emprunt) + ' ans' + (dd.taux_emprunt ? ', ' + C.num(dd.taux_emprunt).toLocaleString('fr-FR') + ' %' : '') + ')' : ''), fin.ressources.emprunt]].filter(function (x) { return x[1]; })) +
           '<tr class="total"><th>Total</th><td class="num">' + eur(fin.totBesoins) + '</td><th>Total</th><td class="num">' + eur(fin.totRessources) + '</td></tr></tbody></table>';
-        return pf + '<div class="doc-calc">' + financeResultsHtml().replace(/<ul class="msgs">[\s\S]*?<\/ul>/g, '') + '</div>';
+        if (!fin.CA) return pf;
+        const fr = financeResultsHtml();
+        const seuilPart = fr.substring(fr.indexOf('<h4>Mon seuil'), fr.indexOf('<h4>Ma trésorerie'));
+        const pv = C.previsionnel(dd, ca(), fin);
+        return pf + '<div class="doc-calc">' + cr3Html(pv, fin) + seuilPart +
+          '<ul class="plain"><li>Trésorerie : au plus bas ' + eur(pv.minSolde) + ' (' + pv.minMois.toLowerCase() + '), positive les 12 premiers mois' + (pv.minSolde < 0 ? ' : NON' : '') + ' — détail en annexe.</li>' +
+          '<li>Apport, prêt d’honneur et aides : ' + pct(fin.partFP) + ' du besoin total.</li>' + (fin.annuite ? '<li>La capacité d’autofinancement couvre ' + fin.ratioCaf.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' fois l’annuité d’emprunt.</li>' : '') + '</ul></div>';
       }
     }
     return '';
@@ -966,6 +1288,39 @@
 
   /* ================= Espace professeur ================= */
   let PROF = { list: [], classe: '', q: '' };
+
+  /* ---------- Grille d'évaluation officielle (annexe 19) ---------- */
+  function renderGrille(etu, data, onBack) {
+    const key = 'efp_grille_' + (etu.id || 'demo');
+    let g = {};
+    try { g = JSON.parse(localStorage.getItem(key)) || {}; } catch (e) { g = {}; }
+    const save = function () { try { localStorage.setItem(key, JSON.stringify(g)); } catch (e) { /* stockage indisponible */ } };
+    const auto = ((data.r9 || {}).autoeval) || {};
+    const lv = [['ne', 'Non évaluable']].concat(window.GRILLE_NIVEAUX.map(function (n) { return [n.id, n.label]; }));
+    S.view = 'grille';
+    const main = $('#main');
+    main.innerHTML = '<div class="apercu-bar no-print"><button type="button" class="btn ghost" id="gr-back">← Retour</button><button type="button" class="btn" onclick="window.print()">Imprimer la grille</button></div>' +
+      '<p class="callout no-print">Grille de l’annexe 19 de la circulaire nationale BTS MCO. Vos saisies restent dans ce navigateur (rien n’est envoyé à l’étudiant). La colonne grisée rappelle l’auto-évaluation de l’étudiant.</p>' +
+      '<div class="doc grille-doc"><h1>Épreuve facultative EF3 — Entrepreneuriat · Grille d’évaluation</h1>' +
+      '<table class="doc-table"><tr><th>Candidat(e)</th><td>' + esc((etu.nom || '').toUpperCase() + ' ' + (etu.prenom || '')) + '</td><th>Projet</th><td>' + esc((data.r0 || {}).projet_nom || '') + '</td></tr>' +
+      '<tr><th>Commission</th><td><input type="text" data-g="commission" value="' + esc(g.commission) + '"></td><th>Date</th><td><input type="text" data-g="date" value="' + esc(g.date) + '"></td></tr></table>' +
+      '<h3>Partie 1 : présentation du modèle économique et du plan d’affaires (10 minutes maximum)</h3><textarea rows="4" data-g="obs1">' + esc(g.obs1) + '</textarea>' +
+      '<h3>Partie 2 : entretien (10 minutes maximum)</h3><textarea rows="4" data-g="obs2">' + esc(g.obs2) + '</textarea>' +
+      '<div class="table-wrap"><table class="doc-table grille-niv"><thead><tr><th>Compétence</th>' + lv.map(function (l) { return '<th>' + esc(l[1]) + '</th>'; }).join('') + '<th>Critère</th><th class="no-print auto">Auto-éval.</th></tr></thead><tbody>' +
+      window.COMPETENCES.map(function (cp) {
+        const a = auto[cp.code] || {};
+        const al = (window.GRILLE_NIVEAUX.find(function (n) { return n.id === a.niveau; }) || {}).label || '—';
+        return '<tr><th>' + cp.code + ' · ' + esc(cp.titre) + '</th>' + lv.map(function (l) { return '<td class="center"><input type="radio" name="g-' + cp.code + '" data-gn="' + cp.code + '" value="' + l[0] + '"' + (g[cp.code] === l[0] ? ' checked' : '') + ' aria-label="' + esc(cp.code + ' ' + l[1]) + '"></td>'; }).join('') + '<td class="small">' + esc(cp.critere) + '</td><td class="no-print auto small">' + esc(al) + '</td></tr>';
+      }).join('') + '</tbody></table></div>' +
+      '<h3>Commentaires de la commission (justification de la note)</h3><textarea rows="5" data-g="comm">' + esc(g.comm) + '</textarea>' +
+      '<p class="note-line"><strong>Note sur 20 :</strong> <input type="text" class="note20" data-g="note" value="' + esc(g.note) + '"></p></div>';
+    $('#gr-back').addEventListener('click', onBack);
+    const box = $('.grille-doc');
+    box.addEventListener('input', function (ev) { const k = ev.target.getAttribute('data-g'); if (k) { g[k] = ev.target.value; save(); } });
+    box.addEventListener('change', function (ev) { const k = ev.target.getAttribute('data-gn'); if (k) { g[k] = ev.target.value; save(); } });
+    window.scrollTo(0, 0);
+  }
+
   async function renderProf() {
     S.view = 'prof';
     const main = $('#main');
@@ -993,7 +1348,7 @@
         '<td><div class="bar small"><span style="width:' + g + '%"></span></div><span class="small">' + g + ' %</span><div class="squares">' + squares + '</div></td>' +
         '<td class="small">' + (e.dossier && e.dossier.updated_at ? new Date(e.dossier.updated_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td>' +
         '<td>' + (dep ? '<span class="small">' + new Date(dep.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) + (e.depots.length > 1 ? ' · ' + e.depots.length + ' versions' : '') + '</span><br><button type="button" class="btn small" data-dl="' + esc(dep.path) + '" data-fn="' + esc(fileName(e, dep)) + '">Télécharger le PDF</button>' : '<span class="muted small">Aucun dépôt</span>') + '</td>' +
-        '<td><button type="button" class="btn ghost small" data-voir="' + esc(e.id) + '">Voir ses réponses</button></td></tr>';
+        '<td><button type="button" class="btn ghost small" data-voir="' + esc(e.id) + '">Voir ses réponses</button> <button type="button" class="btn ghost small" data-grille="' + esc(e.id) + '">Grille d’évaluation</button></td></tr>';
     }).join('');
     main.innerHTML = '<article class="rubrique"><header class="rub-head"><span class="rub-kicker">Espace professeur</span><h1>Mes étudiants</h1><p class="objectif">' + list.length + ' étudiant(s) · ' + nbDepots + ' dossier(s) déposé(s)</p></header>' +
       '<section class="card"><div class="prof-tools"><select id="prof-classe"><option value="">Toutes les classes</option>' + classes.map(function (c) { return '<option' + (PROF.classe === c.code ? ' selected' : '') + ' value="' + esc(c.code) + '">' + esc(c.code + ' — ' + c.nom) + '</option>'; }).join('') + '</select>' +
@@ -1013,6 +1368,14 @@
       try { await Store.addClasse(code, nom); toast('Classe ajoutée.', 'ok'); renderProf(); } catch (e) { toast(e.message, 'err'); }
     });
     $$('[data-toggle-classe]').forEach(function (b) { b.addEventListener('click', async function () { try { await Store.toggleClasse(b.getAttribute('data-toggle-classe'), b.getAttribute('data-actif') === '1'); renderProf(); } catch (e) { toast(e.message, 'err'); } }); });
+    $$('[data-grille]').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        const e = PROF.list.find(function (x) { return x.id === b.getAttribute('data-grille'); });
+        let data = {};
+        try { const dos = await Store.loadDossier(e.id); data = (dos && dos.data) || {}; } catch (err) { /* grille utilisable sans le dossier */ }
+        renderGrille(e, data, drawProf);
+      });
+    });
     $$('[data-voir]').forEach(function (b) {
       b.addEventListener('click', async function () {
         const e = PROF.list.find(function (x) { return x.id === b.getAttribute('data-voir'); });

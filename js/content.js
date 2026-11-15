@@ -292,7 +292,8 @@ window.RUBRIQUES = [
     fields: [
       { type: 'grid', id: 'partenaires', label: 'Mes partenaires : un besoin, un nom', req: 5,
         rows: [ { id: 'appro', label: 'S’approvisionner' }, { id: 'equip', label: 'S’équiper' }, { id: 'services', label: 'Se faire servir (banque, assurance, comptable…)' }, { id: 'local', label: 'S’ancrer localement' }, { id: 'finance', label: 'Se financer' } ],
-        cols: [ { id: 'nom', label: 'Partenaire nommé (et localisé)' }, { id: 'relation', label: 'Contenu de la relation (conditions, fréquence, tarif)', type: 'textarea' } ] },
+        cols: [ { id: 'nom', label: 'Partenaire nommé (et localisé)' }, { id: 'relation', label: 'Contenu de la relation (conditions, fréquence, tarif)', type: 'textarea' },
+          { id: 'contact', label: 'Contacté le', w: 'sm', opt: true }, { id: 'devis', label: 'Devis ou conditions écrites', type: 'select', options: ['', 'Oui', 'Demandé', 'Non'], w: 'sm', opt: true } ] },
       { type: 'grid', id: 'aides', label: 'Mes aides', help: '2 ou 3 aides justifiées, vérifiées sur bpifrance-creation.fr.', dynamic: true, minRows: 2, req: 2,
         cols: [ { id: 'aide', label: 'Aide' }, { id: 'organisme', label: 'Organisme' }, { id: 'eligibilite', label: 'Pourquoi j’y suis éligible' }, { id: 'montant', label: 'Montant ou effet', w: 'sm' } ] },
       { type: 'heading', label: 'Mes ressources humaines' },
@@ -300,6 +301,9 @@ window.RUBRIQUES = [
       { type: 'number', id: 'heures_ouverture', label: 'Heures d’ouverture par semaine', req: true, min: 0, inline: true },
       { type: 'number', id: 'heures_travail', label: 'Mes heures de travail par semaine (ouverture + préparation + gestion)', req: true, min: 0, inline: true },
       { type: 'textarea', id: 'organisation', label: 'Qui fait quoi, et comment je tiens ces horaires', req: true, rows: 3 },
+      { type: 'grid', id: 'planning', label: 'Mon planning type de la semaine', help: 'Les heures d’ouverture et qui est présent. C’est la preuve que vos besoins humains sont anticipés (compétence C5).', req: 1,
+        rows: [ { id: 'lun', label: 'Lundi' }, { id: 'mar', label: 'Mardi' }, { id: 'mer', label: 'Mercredi' }, { id: 'jeu', label: 'Jeudi' }, { id: 'ven', label: 'Vendredi' }, { id: 'sam', label: 'Samedi' }, { id: 'dim', label: 'Dimanche' } ],
+        cols: [ { id: 'ouverture', label: 'Ouverture (ex. 7h-15h, ou « fermé »)', w: 'sm' }, { id: 'qui', label: 'Qui est présent, et quand' }, { id: 'autres', label: 'Hors ouverture (préparation, commandes, gestion)', opt: true } ] },
       { type: 'textarea', id: 'competences', label: 'Les compétences qui me manquent et les formations prévues', req: true, rows: 2 },
       { type: 'textarea', id: 'signal_renfort', label: 'Mon signal de recrutement', help: 'Ex. : CA moyen au-dessus de X € par jour pendant 3 mois → embauche à temps partiel.', req: true, rows: 2 },
       { type: 'number', id: 'cout_salarie_annuel', label: 'Coût employeur des salariés prévus en année 1 (€ par an, 0 si aucun)', help: 'Il sera comparé à votre compte de résultat.', req: true, min: 0 },
@@ -326,10 +330,12 @@ window.RUBRIQUES = [
       '<strong>Diviser par le mauvais taux.</strong> Seuil = charges fixes ÷ taux de marge sur coût variable (et non ÷ taux de charges variables).'
     ],
     fields: [
-      { type: 'heading', label: 'Mon statut juridique (à choisir d’abord : il change le calcul des cotisations et de l’impôt)' },
+      { type: 'heading', label: 'Mon statut juridique' },
       { type: 'select', id: 'statut', label: 'Le statut retenu', req: true, options: ['', 'Micro-entreprise', 'Entreprise individuelle au réel', 'EURL', 'SARL', 'SASU', 'SAS'],
-        help: 'Pour comparer les statuts avec vos chiffres : simulateurs officiels sur mon-entreprise.urssaf.fr et comparatif sur bpifrance-creation.fr. Ici, l’EURL et la SARL sont calculées à l’impôt sur les sociétés.' },
+        help: 'À choisir d’abord : il change le calcul des cotisations et de l’impôt. Pour comparer les statuts avec vos chiffres : simulateurs officiels sur mon-entreprise.urssaf.fr et comparatif sur bpifrance-creation.fr. Ici, l’EURL et la SARL sont calculées à l’impôt sur les sociétés.' },
       { type: 'finance', req: ['b_invest', 'b_treso', 'r_apport', 'taux_var', 'src_var', 'c_loyer', 'src_loyer', 'c_energie', 'c_assurance', 'c_compta', 'c_comm', 'remu_net', 'taux_cotis', 'bfr_stock_j', 'bfr_clients_j', 'bfr_fourn_j', 'croissance_a2', 'croissance_a3', 'mois_debut'] },
+      { type: 'select', id: 'regime_fiscal', label: 'Imposition de l’EURL', showIf: { field: 'statut', equals: 'EURL' }, options: [['IS', 'Impôt sur les sociétés (option)'], ['IR', 'Impôt sur le revenu (régime par défaut de l’EURL)']],
+        help: 'À l’IR, le bénéfice est imposé chez vous avec vos autres revenus ; à l’IS, l’entreprise paie l’impôt et votre rémunération est une charge.' },
       { type: 'heading', label: 'Pourquoi ce statut' },
       { type: 'textarea', id: 'statut_justif', label: 'Pourquoi ce statut (deux phrases)', help: 'Ai-je des charges importantes à déduire ? Dois-je protéger mon patrimoine et rassurer la banque ?', req: true, rows: 3 },
       { type: 'grid', id: 'risques', label: 'Mes 5 risques et leurs parades', req: 5,
@@ -359,6 +365,9 @@ window.RUBRIQUES = [
     fields: [
       { type: 'coherence', id: 'coh', req: true },
       { type: 'heading', label: 'Mes 10 minutes de présentation' },
+      { type: 'text', id: 'accroche', label: 'Mon accroche (une phrase, 15 mots maximum)', ph: 'Ex. : Pour un bon café, il faut 35 minutes de RER.', req: true },
+      { type: 'text', id: 'etapes', label: 'Mes 3 prochaines étapes, séparées par des points-virgules', ph: 'Ex. : signer le local ; formation barista ; dossier Initiative', req: true },
+      { type: 'oral' },
       { type: 'grid', id: 'oral', label: 'Mon plan minuté', help: 'Ce que je dis, et ce que je montre, à chaque instant.', req: 9,
         rows: [
           { id: 'b1', label: '0:00 – 0:30 · L’accroche et l’idée en une phrase' },
@@ -396,6 +405,8 @@ window.RUBRIQUES = [
           { id: 'q20', label: 'Pourquoi ce statut juridique ?' }
         ],
         cols: [ { id: 'reponse', label: 'Ma réponse', type: 'textarea' } ] },
+      { type: 'heading', label: 'Mon auto-évaluation avec la grille officielle' },
+      { type: 'autoeval', id: 'autoeval', req: true },
       { type: 'check', id: 'repete', label: 'J’ai répété mes 10 minutes au moins trois fois, chronométré (objectif : 9 min 30).', req: true },
       { type: 'depot' }
     ]
@@ -423,4 +434,12 @@ window.CANVAS = [
   { id: 'segments', label: 'Segments de clientèle', q: 'Pour qui ? (repris de la rubrique 4)', area: 'sc' },
   { id: 'couts', label: 'Structure de coûts', q: 'Mes coûts fixes et variables principaux', area: 'co' },
   { id: 'revenus', label: 'Flux de revenus', q: 'D’où vient l’argent ? (proportions, panier)', area: 're' }
+];
+
+/* Grille officielle — annexe 19 de la circulaire nationale BTS MCO : descripteurs par niveau */
+window.GRILLE_NIVEAUX = [
+  { id: 'nm', label: 'Non maîtrisé', desc: ['Agit sans méthodologie ou avec une méthodologie inadaptée', 'N’utilise pas d’outils ou ne les maîtrise pas', 'N’analyse pas', 'Communique de façon non appropriée', 'N’utilise pas d’information', 'N’atteint pas les objectifs', 'Ne formule aucune proposition ou des propositions incohérentes', 'Ne prend pas en compte les contraintes'] },
+  { id: 'mp', label: 'Maîtrise partielle', desc: ['Met en œuvre une méthodologie incomplète', 'Mobilise correctement quelques outils', 'Analyse de manière incomplète', 'Rend compte sans argumentation', 'Utilise partiellement les informations', 'Atteint en partie les objectifs', 'Formule quelques propositions', 'Prend en compte partiellement les contraintes'] },
+  { id: 'bm', label: 'Bonne maîtrise', desc: ['Comprend et met en œuvre une méthodologie rigoureuse', 'Choisit les outils adaptés', 'Analyse de manière pertinente', 'Argumente et fait comprendre', 'Recherche et mobilise l’information', 'Atteint les objectifs', 'Justifie et argumente ses propositions', 'Intègre l’ensemble des contraintes'] },
+  { id: 'em', label: 'Excellente maîtrise', desc: ['Propose une méthodologie pertinente', 'Adapte et/ou élabore des outils opérationnels', 'Analyse et remédie', 'Fait adhérer', 'Produit des informations pertinentes et exploitables', 'Dépasse les objectifs', 'Est force de proposition', 'Anticipe les contraintes'] }
 ];

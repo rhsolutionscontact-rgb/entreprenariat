@@ -148,7 +148,7 @@
     };
     const fixes = sum(fixesSaisis) + besoins.frais + remu + interets + amort;
     const resultat = CA - variables - fixes;
-    const societe = isSociete(r8.statut);
+    const societe = isSociete(r8.statut) && !(r8.statut === 'EURL' && r8.regime_fiscal === 'IR');
     const is = societe ? impotSocietes(resultat) : 0;
     const resultatNet = resultat - is;
 
@@ -180,7 +180,7 @@
       else alertes.push('Plan de financement déséquilibré : il manque ' + fmtEur(Math.abs(totBesoins - totRessources)) + (totBesoins > totRessources ? ' de ressources.' : ' de besoins (ou trop de ressources).'));
     }
     if (besoins.treso <= 0 && totBesoins > 0) alertes.push('Aucune trésorerie de départ : c’est la ligne que le jury vérifie en premier.');
-    else if (besoins.treso > 0 && moisTreso < 2) alertes.push('Votre trésorerie de départ couvre ' + moisTreso.toFixed(1).replace('.', ',') + ' mois de charges : visez au moins 2 mois.');
+    else if (besoins.treso > 0 && moisTreso < 1.5) alertes.push('Votre trésorerie de départ couvre ' + moisTreso.toFixed(1).replace('.', ',') + ' mois de charges : visez au moins 2 mois.');
     else if (besoins.treso > 0) ok.push('Trésorerie de départ : environ ' + moisTreso.toFixed(1).replace('.', ',') + ' mois de charges couverts.');
     if (remuNet <= 0) alertes.push('Vous ne vous payez pas : le jury demandera « et vous vivez de quoi ? ».');
 
@@ -309,7 +309,7 @@
         apport: y === 1 ? f.ressources.apport : 0,
         quasi: y === 1 ? f.ressources.honneur + f.ressources.aides : 0,
         emprunt: y === 1 ? f.ressources.emprunt : 0,
-        caf: a.caf
+        caf: y === 1 ? a.caf + f.besoins.frais : a.caf
       };
       const tb = sum(b), tr = sum(r);
       cumul += tr - tb;
