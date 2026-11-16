@@ -438,6 +438,21 @@
       '<div class="fin-inputs"><select data-path="' + pathAttr(['r8', key]) + '" data-live="fin"' + ro + '>' + opts + '</select></div></div>';
   }
 
+  /** Lignes libres de la partie finance (tableaux à lignes ajoutables). */
+  const X_GRIDS = {
+    x_besoins: { label: 'Mes autres besoins', help: 'Ce qui ne rentre dans aucune case ci-dessus : un véhicule, un site marchand, une licence, une caution… Choisissez sa nature : elle décide où il va dans les calculs.',
+      cols: [{ id: 'lib', label: 'Quoi ?', w: 'w-lg' }, { id: 'nature', label: 'Nature', type: 'select', options: [''].concat(C.NAT_BESOINS) }, { id: 'montant', label: 'Montant HT (€)', type: 'number' }, { id: 'duree', label: 'Amorti sur (ans)', type: 'number', opt: true }, { id: 'src', label: 'Source (devis, annonce…)', w: 'w-lg' }] },
+    x_ressources: { label: 'Mes autres ressources', help: 'Apport d’un associé, financement participatif, prêt Bpifrance, prêt familial, subvention de la Région… Un emprunt ajouté ici a son propre taux et sa propre durée.',
+      cols: [{ id: 'lib', label: 'Quoi ?', w: 'w-lg' }, { id: 'nature', label: 'Nature', type: 'select', options: [''].concat(C.NAT_RESSOURCES) }, { id: 'montant', label: 'Montant (€)', type: 'number' }, { id: 'taux', label: 'Taux si emprunt (%)', type: 'number', opt: true }, { id: 'duree', label: 'Durée si emprunt (ans)', type: 'number', opt: true }, { id: 'src', label: 'Source', w: 'w-lg' }] },
+    x_charges: { label: 'Mes autres charges fixes', help: 'Une ligne par charge qui revient chaque année, quel que soit le chiffre d’affaires : leasing ou location de matériel, logiciel de caisse, site internet, frais de déplacement, cotisation à un réseau, contrat de maintenance…',
+      cols: [{ id: 'lib', label: 'Quoi ?', w: 'w-lg' }, { id: 'montant', label: 'Montant HT par an (€)', type: 'number' }, { id: 'tva', label: 'TVA', type: 'select', options: ['Avec TVA', 'Sans TVA'] }, { id: 'src', label: 'Source', w: 'w-lg' }] },
+    x_var: { label: 'Mes autres charges variables', help: 'Les coûts qui suivent les ventes, en % du chiffre d’affaires : commission sur la carte bancaire, commission d’une plateforme de livraison ou de réservation, frais de port offerts, emballages…',
+      cols: [{ id: 'lib', label: 'Quoi ?', w: 'w-lg' }, { id: 'pct', label: '% du CA HT', type: 'number' }, { id: 'tva', label: 'TVA', type: 'select', options: ['Avec TVA', 'Sans TVA'] }, { id: 'src', label: 'Source', w: 'w-lg' }] },
+    x_recettes: { label: 'Mes recettes annexes', help: 'Ce que vous vendez en plus de votre activité principale : ateliers, privatisation, location d’espace, cartes cadeaux, vente en ligne, dépôt-vente… Indiquez le montant annuel HT et ce qu’il vous coûte.',
+      cols: [{ id: 'lib', label: 'Quoi ?', w: 'w-lg' }, { id: 'montant', label: 'Montant HT par an (€)', type: 'number' }, { id: 'cout', label: 'Coût variable (% de ce montant)', type: 'number', opt: true }, { id: 'tva', label: 'TVA (%)', type: 'select', options: ['20', '10', '5.5', '0'] }, { id: 'src', label: 'Source', w: 'w-lg' }] }
+  };
+  function xGrid(id) { const g = X_GRIDS[id]; return '<div class="x-lines">' + gridHtml({ id: 'r8' }, { id: id, label: g.label, help: g.help, cols: g.cols, dynamic: true, minRows: 1 }) + '</div>'; }
+
   function financeHtml(r, f) {
     FIN_REQ = f.req || [];
     const reprise = rd('r1').type_projet === 'Reprise';
@@ -461,6 +476,7 @@
         finField('taux_emprunt', 'Taux de l’emprunt', { unit: '%' }) +
         finField('duree_emprunt', 'Durée de l’emprunt', { unit: 'ans' }) +
         '<p class="fin-total" id="fin-tot-r"></p></div></div>' +
+      xGrid('x_besoins') + xGrid('x_ressources') +
       '<div id="fin-balance"></div>' +
 
       '<h3 class="form-heading">2. Mes charges (compte de résultat, année 1, scénario prudent)</h3>' +
@@ -478,6 +494,7 @@
       (rd('r8').statut === 'Micro-entreprise'
         ? finField('taux_cotis', 'Cotisations sociales en % du chiffre d\u2019affaires', { unit: '%', help: 'Micro-entreprise : taux fixé par l\u2019URSSAF selon l\u2019activité (vente ou service), à vérifier sur urssaf.fr' })
         : finField('taux_cotis', 'Cotisations sociales en % du net', { unit: '%', help: 'Ordre de grandeur à confirmer au simulateur URSSAF selon le statut' })) +
+      xGrid('x_charges') + xGrid('x_var') + xGrid('x_recettes') +
       '<h3 class="form-heading">3. Mon besoin en fonds de roulement (BFR)</h3>' +
       '<p class="help">L’argent bloqué dans le cycle d’exploitation : le stock à financer, plus ce que les clients vous doivent, moins ce que vous devez à vos fournisseurs (méthode Bpifrance Création).</p>' +
       finField('bfr_stock_j', 'Stock moyen, en jours d’achats', { unit: 'jours', help: 'Ex. : 7 pour un café livré chaque semaine, 60 à 90 pour une boutique de vêtements' }) +
@@ -498,7 +515,68 @@
       '<p class="help">Le plan de trésorerie suit l’argent réellement encaissé et payé, TVA comprise, sur les 12 premiers mois.</p>' +
       finSelect('mois_debut', 'Mois d’ouverture', [''].concat(C.MOIS)) +
       finSelect('tva_achats', 'TVA sur mes achats de marchandises', [['', 'Même taux que mes ventes'], ['20', '20 %'], ['10', '10 %'], ['5.5', '5,5 %'], ['2.1', '2,1 %'], ['0', 'Pas de TVA']], 'Les investissements et les autres charges sont comptés à 20 %.') +
-      '<div id="fin-results">' + financeResultsHtml() + '</div></div>';
+      '<div id="fin-results">' + financeResultsHtml() + '</div>' +
+      '<div id="fin-sim">' + simHtml() + '</div></div>';
+  }
+
+  /* ================= Simulateur « Et si… ? » =================
+     Teste des variations sans toucher au dossier. */
+  const SIM_DEF = [
+    { k: 'clients', label: 'Clients par jour', min: -40, max: 30, step: 5, unit: '%' },
+    { k: 'panier', label: 'Panier moyen', min: -20, max: 20, step: 5, unit: '%' },
+    { k: 'loyer', label: 'Loyer', min: -20, max: 50, step: 10, unit: '%' },
+    { k: 'var', label: 'Charges variables', min: -5, max: 10, step: 1, unit: ' pt' },
+    { k: 'fixes', label: 'Autres charges fixes', min: -20, max: 50, step: 10, unit: '%' }
+  ];
+  function simState() { return S.sim || (S.sim = { clients: 0, panier: 0, loyer: 0, var: 0, fixes: 0 }); }
+  function simCompute(v) {
+    const r6 = Object.assign({}, rd('r6')), r8 = Object.assign({}, rd('r8'));
+    const k = function (x) { return 1 + x / 100; };
+    ['taux_prudent', 'taux_moyen', 'taux_optimiste'].forEach(function (t) { if (r6[t] !== undefined && r6[t] !== '') r6[t] = C.num(r6[t]) * k(v.clients); });
+    if (r6.panier_ttc) r6.panier_ttc = C.num(r6.panier_ttc) * k(v.panier);
+    if (r8.c_loyer) r8.c_loyer = C.num(r8.c_loyer) * k(v.loyer);
+    r8.taux_var = Math.max(0, C.num(r8.taux_var) + v.var);
+    ['c_energie', 'c_assurance', 'c_compta', 'c_comm', 'c_autres'].forEach(function (t) { if (r8[t]) r8[t] = C.num(r8[t]) * k(v.fixes); });
+    if (Array.isArray(r8.x_charges)) r8.x_charges = r8.x_charges.map(function (x) { return Object.assign({}, x, { montant: C.num(x.montant) * k(v.fixes) }); });
+    const c = C.caCalc(r6, rd('r3')), f = C.financeCalc(r8, c);
+    let p = null; try { p = C.previsionnel(r8, c, f); } catch (e) { p = null; }
+    return { c: c, f: f, p: p };
+  }
+  function simHtml() {
+    if (!finance().CA) return '';
+    const v = simState();
+    return '<div class="calc-box sim"><h3 class="form-heading">Et si… ? Testez vos hypothèses</h3>' +
+      '<p class="help">Le jury demande souvent : « Et si vous n’aviez que 40 clients ? », « Et si le loyer augmente ? ». Bougez les curseurs pour voir l’effet sur vos résultats. <strong>Votre dossier n’est pas modifié.</strong></p>' +
+      '<div class="sim-ctrls">' + SIM_DEF.map(function (d) {
+        return '<label class="sim-ctrl"><span class="sim-lab">' + esc(d.label) + ' <output id="sim-o-' + d.k + '">' + simFmt(v[d.k], d.unit) + '</output></span>' +
+          '<input type="range" class="sim-range" data-sim="' + d.k + '" min="' + d.min + '" max="' + d.max + '" step="' + d.step + '" value="' + v[d.k] + '" aria-label="' + esc(d.label) + '"></label>';
+      }).join('') + '</div>' +
+      '<div id="sim-out">' + simOutHtml() + '</div>' +
+      '<button type="button" class="btn ghost small" id="sim-reset">Revenir à mes hypothèses</button></div>';
+  }
+  function simFmt(x, unit) { return (x > 0 ? '+' : (x < 0 ? '−' : '')) + Math.abs(x) + unit.trim().replace(/^%$/, ' %').replace(/^pt$/, ' pt'); }
+  function simOutHtml() {
+    const v = simState();
+    const B = simCompute({ clients: 0, panier: 0, loyer: 0, var: 0, fixes: 0 });
+    const N = simCompute(v);
+    const res = function (x) { return x.f.societe ? x.f.resultatNet : x.f.resultat; };
+    const signe = function (x) { return (x >= 0 ? '+ ' : '− ') + eur(Math.abs(x)); };
+    const delta = function (a, b, fmt) { const d = a - b; if (Math.abs(d) < 0.5) return 'inchangé'; return (d > 0 ? '+' : '−') + ' ' + fmt(Math.abs(d)) + ' par rapport à votre dossier'; };
+    const cl = N.c.sc.prudent.clients, tmin = N.p ? N.p.minSolde : null;
+    const r = res(N), bad = r < 0;
+    const k = '<div class="kpis sim-kpis">' +
+      kpi('Clients par jour', cl.toLocaleString('fr-FR', { maximumFractionDigits: 1 }), delta(cl, B.c.sc.prudent.clients, function (x) { return x.toLocaleString('fr-FR', { maximumFractionDigits: 1 }); })) +
+      kpi('Chiffre d’affaires HT', eur(N.f.caTotal || N.f.CA), delta(N.f.caTotal || N.f.CA, B.f.caTotal || B.f.CA, eur)) +
+      kpi(N.f.societe ? 'Résultat net' : 'Résultat avant impôt', signe(r), delta(r, res(B), eur), bad ? 'bad' : 'good') +
+      kpi('Point mort', N.f.seuilClients + ' clients / jour', 'marge de sécurité ' + pct(N.f.margeSecu).replace('-', '−'), N.f.margeSecu < 0 ? 'bad' : (N.f.margeSecu < 0.10 ? '' : 'good')) +
+      (tmin !== null ? kpi('Trésorerie la plus basse', signe(tmin), N.p.minMois ? 'en ' + N.p.minMois.toLowerCase() : '', tmin < 0 ? 'bad' : 'good') : '') + '</div>';
+    const actif = SIM_DEF.filter(function (d) { return v[d.k]; });
+    const phrase = actif.length
+      ? '<p class="sim-phrase"><strong>À dire au jury :</strong> « Si ' + actif.map(function (d) { return d.label.toLowerCase() + ' ' + (v[d.k] > 0 ? 'augmentent de ' : 'baissent de ') + Math.abs(v[d.k]) + (d.unit.trim() === 'pt' ? ' point' + (Math.abs(v[d.k]) > 1 ? 's' : '') : ' %'); }).join(' et si ').replace(/panier moyen (augmentent|baissent)/, function (m, x) { return 'le panier moyen ' + (x === 'augmentent' ? 'augmente' : 'baisse'); }).replace(/loyer (augmentent|baissent)/, function (m, x) { return 'le loyer ' + (x === 'augmentent' ? 'augmente' : 'baisse'); }).replace(/^clients par jour/, 'les clients par jour') +
+        ', mon ' + (N.f.societe ? 'résultat net' : 'résultat') + ' passe à ' + signe(r) + (bad ? ' : je perds de l’argent' : '') + '. Mon point mort est alors à ' + N.f.seuilClients + ' clients par jour. »</p>' +
+        (bad ? '<p class="sim-warn">Préparez votre parade : quelle charge réduire, quel levier commercial activer, combien de temps votre trésorerie tient-elle ?</p>' : '')
+      : '<p class="muted small">Toutes les hypothèses sont celles de votre dossier.</p>';
+    return k + phrase;
   }
 
   function financeResultsHtml() {
@@ -509,8 +587,12 @@
     const line = function (label, v, src, cls) { return '<tr class="' + (cls || '') + '"><td>' + label + '</td><td class="num">' + v + '</td><td class="src-cell">' + esc(src || '') + '</td></tr>'; };
     const neg = function (v) { return '− ' + eur(v); };
     const cr = '<h4>Mon compte de résultat prévisionnel</h4><div class="table-wrap"><table class="result cr"><thead><tr><th>Poste</th><th class="num">Montant</th><th>D’où vient le chiffre</th></tr></thead><tbody>' +
-      line('Chiffre d’affaires HT', eur(f.CA), 'Scénario prudent (rubrique 6)', 'strong') +
-      line('Charges variables (' + C.num(d.taux_var).toLocaleString('fr-FR') + ' %)', neg(f.variables), d.src_var) +
+      line(f.annexes ? 'Ventes principales HT' : 'Chiffre d’affaires HT', eur(f.CA), 'Scénario prudent (rubrique 6)', 'strong') +
+      f.X.recettes.map(function (x) { return line('+ ' + esc(x.lib || 'Recette annexe'), eur(C.num(x.montant)), x.src); }).join('') +
+      (f.annexes ? line('Chiffre d’affaires total HT', eur(f.caTotal), '', 'strong') : '') +
+      line('Charges variables (' + C.num(d.taux_var).toLocaleString('fr-FR') + ' %)', neg(f.CA * f.tauxAchats / 100), d.src_var) +
+      f.X.variables.map(function (x) { return line(esc(x.lib || 'Charge variable') + ' (' + C.num(x.pct).toLocaleString('fr-FR') + ' %)', neg(f.CA * C.num(x.pct) / 100), x.src); }).join('') +
+      (f.annexesVar ? line('Coût des recettes annexes', neg(f.annexesVar), '') : '') +
       line('Loyer et charges', neg(f.fixesSaisis.loyer), d.src_loyer) +
       line('Énergie, eau, téléphone', neg(f.fixesSaisis.energie), d.src_energie) +
       line('Assurances', neg(f.fixesSaisis.assurance), d.src_assurance) +
@@ -518,19 +600,20 @@
       line('Communication', neg(f.fixesSaisis.comm), d.src_comm) +
       (f.fixesSaisis.salaires ? line('Salaires (coût employeur)', neg(f.fixesSaisis.salaires), d.src_salaires) : '') +
       (f.fixesSaisis.autres ? line('Autres charges fixes', neg(f.fixesSaisis.autres), d.src_autres) : '') +
+      f.X.charges.map(function (x) { return line(esc(x.lib || 'Charge fixe'), neg(C.num(x.montant)), x.src); }).join('') +
       (f.besoins.frais ? line('Frais de lancement (année 1 seulement)', neg(f.besoins.frais), 'Plan de financement') : '') +
       line('Ma rémunération + cotisations', neg(f.remu), C.num(d.remu_net) ? eur(C.num(d.remu_net)) + ' net par mois + cotisations (' + C.num(d.taux_cotis).toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' % ' + (f.micro ? 'du CA' : 'du net') + ')' : 'À compléter') +
-      (f.interets ? line('Intérêts d’emprunt', neg(f.interets), eur(f.ressources.emprunt) + ' à ' + C.num(d.taux_emprunt).toLocaleString('fr-FR') + ' %') : '') +
-      (f.amort ? line('Amortissements', neg(f.amort), eur(f.besoins.invest) + ' ÷ ' + (C.num(d.duree_amort) || 5) + ' ans') : '') +
+      (f.interets ? line('Intérêts d’emprunt', neg(f.interets), f.nbEmprunts > 1 ? f.nbEmprunts + ' emprunts, ' + eur(f.ressources.emprunt) + ' au total' : eur(f.ressources.emprunt) + ' à ' + C.num(d.taux_emprunt || (f.X.loans[0] || {}).taux).toLocaleString('fr-FR') + ' %') : '') +
+      (f.amort ? line('Amortissements', neg(f.amort), f.amortLines.map(function (l) { return eur(l.montant) + ' ÷ ' + l.duree + ' ans'; }).join(' + ')) : '') +
       (f.fixesSaisis.impots ? line('Impôts et taxes', neg(f.fixesSaisis.impots), d.src_impots) : '') +
       line('Résultat avant impôt', (f.resultat >= 0 ? '+ ' : '− ') + eur(Math.abs(f.resultat)), '', 'total ' + (f.resultat >= 0 ? 'pos' : 'negv')) +
       (f.societe ? line('Impôt sur les sociétés', neg(f.is), '15 % jusqu’à 42 500 € de bénéfice, 25 % au-delà') + line('Résultat net', (f.resultatNet >= 0 ? '+ ' : '− ') + eur(Math.abs(f.resultatNet)), '', 'total ' + (f.resultatNet >= 0 ? 'pos' : 'negv')) : '') +
       '</tbody></table></div>';
 
     const seuil = '<h4>Mon seuil de rentabilité</h4><ol class="steps">' +
-      '<li>Charges fixes (toutes les lignes sauf les variables) : <strong>' + eur(f.fixes) + '</strong></li>' +
+      '<li>Charges fixes (toutes les lignes sauf les variables) : <strong>' + eur(f.fixes) + '</strong>' + (f.margeAnnexes ? ', moins la marge des recettes annexes (' + eur(f.margeAnnexes) + ') : reste <strong>' + eur(f.fixesNet) + '</strong> à couvrir par les ventes principales' : '') + '</li>' +
       '<li>Taux de marge sur coût variable : (' + eur(f.CA) + ' − ' + eur(f.variables) + ') ÷ ' + eur(f.CA) + ' = <strong>' + pct(f.tmcv, 1) + '</strong></li>' +
-      '<li>Seuil = ' + eur(f.fixes) + ' ÷ ' + pct(f.tmcv, 1) + ' = <strong>' + eur(f.seuil) + '</strong>, soit ' + eur(f.seuilJour) + ' par jour, soit ' + f.seuilClientsExact.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' clients par jour à ' + eur(c.panierHT, 2) + ' HT.</li></ol>' +
+      '<li>Seuil = ' + eur(f.fixesNet) + ' ÷ ' + pct(f.tmcv, 1) + ' = <strong>' + eur(f.seuil) + '</strong>, soit ' + eur(f.seuilJour) + ' par jour, soit ' + f.seuilClientsExact.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' clients par jour à ' + eur(c.panierHT, 2) + ' HT.</li></ol>' +
       '<div class="kpis">' +
         kpi('Point mort', f.seuilClients + ' clients / jour', 'arrondi au-dessus') +
         kpi('Prévu (prudent)', c.sc.prudent.clients.toLocaleString('fr-FR', { maximumFractionDigits: 1 }) + ' clients / jour', '') +
@@ -567,8 +650,10 @@
     const A = p.ans;
     const row = function (label, k, cls, neg) { return '<tr class="' + (cls || '') + '"><td>' + label + '</td>' + A.map(function (a) { const v = typeof k === 'function' ? k(a) : a[k]; return '<td class="num">' + (neg && v ? '− ' + eur(v) : sgn(v)) + '</td>'; }).join('') + '</tr>'; };
     return '<h4>Mon compte de résultat sur 3 ans</h4><div class="table-wrap"><table class="result cr3"><thead><tr><th></th><th class="num">Année 1</th><th class="num">Année 2</th><th class="num">Année 3</th></tr></thead><tbody>' +
+      (f.annexes ? row('Ventes principales HT', 'ventes') + row('Recettes annexes HT', 'annexes') : '') +
       row('Chiffre d’affaires HT', 'ca', 'strong') +
       row('Achats consommés (charges variables)', 'achats', '', true) +
+      (f.X.varPct ? row('Autres charges variables (commissions…)', 'autresVar', '', true) : '') +
       row('Charges externes (loyer, énergie, assurances, honoraires, publicité…)', 'externes', '', true) +
       (A.some(function (a) { return a.impots; }) ? row('Impôts et taxes', 'impots', '', true) : '') +
       (A.some(function (a) { return a.salaires; }) ? row('Salaires (coût employeur)', 'salaires', '', true) : '') +
@@ -585,7 +670,7 @@
 
   function empruntHtml(p) {
     if (!p.emprunt.length) return '';
-    return '<h4>Le remboursement de mon emprunt</h4><div class="table-wrap"><table class="result"><thead><tr><th>Année</th><th class="num">Capital restant dû</th><th class="num">Intérêts (charge)</th><th class="num">Capital remboursé</th><th class="num">Annuité</th></tr></thead><tbody>' +
+    return '<h4>Le remboursement de mes emprunts</h4><div class="table-wrap"><table class="result"><thead><tr><th>Année</th><th class="num">Capital restant dû</th><th class="num">Intérêts (charge)</th><th class="num">Capital remboursé</th><th class="num">Annuité</th></tr></thead><tbody>' +
       p.emprunt.map(function (l) { return '<tr><td>' + l.annee + '</td><td class="num">' + eur(l.debut) + '</td><td class="num">' + eur(l.interets) + '</td><td class="num">' + eur(l.capital) + '</td><td class="num">' + eur(l.annuite) + '</td></tr>'; }).join('') +
       '</tbody></table></div><p class="muted small">Seuls les intérêts sont une charge du compte de résultat ; le capital remboursé est payé avec la trésorerie (soit environ ' + eur(p.emprunt[0].annuite / 12) + ' par mois).</p>';
   }
@@ -603,7 +688,7 @@
       '<tr class="sub"><th colspan="4">Ressources durables</th></tr>' +
       r('Apport personnel', function (x) { return x.ressources.apport; }) +
       r('Prêt d’honneur et aides', function (x) { return x.ressources.quasi; }) +
-      r('Emprunt bancaire', function (x) { return x.ressources.emprunt; }) +
+      r('Emprunts', function (x) { return x.ressources.emprunt; }) +
       r('Capacité d’autofinancement (année 1 : avant frais de lancement, déjà financés)', function (x) { return x.ressources.caf; }) +
       r('Total des ressources', function (x) { return x.totR; }, 'total') +
       r('Excédent de l’année', function (x) { return x.excedent; }, 'strong') +
@@ -686,7 +771,7 @@
     const W = 640, H = 300, ml = 70, mr = 20, mt = 20, mb = 44;
     const maxCl = Math.max(c.sc.prudent.clients * 1.5, f.seuilClientsExact * 1.3, 10);
     const caAt = function (n) { return n * c.panierHT * c.jours; };
-    const chAt = function (n) { return f.fixes + caAt(n) * (1 - f.tmcv); };
+    const chAt = function (n) { return f.fixesNet + caAt(n) * (1 - f.tmcv); };
     const maxY = Math.max(caAt(maxCl), chAt(maxCl));
     const X = function (n) { return ml + n / maxCl * (W - ml - mr); };
     const Y = function (v) { return mt + (1 - v / maxY) * (H - mt - mb); };
@@ -823,7 +908,7 @@
     const main = $('#main');
     const sl = slides();
     let h = '<div class="apercu-bar no-print"><button type="button" class="btn ghost" id="or-back">← Retour</button>' +
-      ['supports', 'fiche', 'entrainement'].map(function (t) { return '<button type="button" class="btn ' + (tab === t ? '' : 'ghost') + ' small" data-oral-tab="' + t + '">' + ({ supports: 'Mes supports', fiche: 'Mes chiffres par cœur', entrainement: 'Entraînement aux questions' })[t] + '</button>'; }).join('') + '</div>';
+      ['supports', 'fiche', 'entrainement', 'notions'].map(function (t) { return '<button type="button" class="btn ' + (tab === t ? '' : 'ghost') + ' small" data-oral-tab="' + t + '">' + ({ supports: 'Mes supports', fiche: 'Mes chiffres par cœur', entrainement: 'Entraînement aux questions', notions: 'Réviser les notions' })[t] + '</button>'; }).join('') + '</div>';
     if (tab === 'supports') {
       const lourds = sl.filter(function (x) { return x.words > 30; });
       h += '<div class="no-print oral-intro"><h1>Mes supports pour l’oral</h1><p>Générés automatiquement à partir de votre dossier, dans l’ordre du plan minuté : ' + sl.length + ' supports, un visuel chacun. Votre manuel le rappelle : <strong>8 à 10 supports maximum, presque pas de texte</strong>.</p>' +
@@ -833,6 +918,12 @@
     } else if (tab === 'fiche') {
       h += '<div class="oral-intro"><h1>Mes chiffres à connaître par cœur</h1><p class="no-print">À relire la veille, et seulement ça. Le jury recoupe ces chiffres avec votre dossier pendant l’entretien.</p></div>' + chiffresCles() +
         '<div class="no-print oral-actions"><button type="button" class="btn ghost" onclick="window.print()">Imprimer ma fiche</button></div>';
+    } else if (tab === 'notions') {
+      const ns = notionsDuDossier();
+      S.revision = { list: ns, cur: null, sues: S.revision && S.revision.sues || {} };
+      h += '<div class="oral-intro"><h1>Réviser les notions de mon dossier</h1><p>Le jury peut vous demander de définir un mot que vous avez employé : « C’est quoi, votre BFR ? », « Pourquoi une SASU ? ». Voici les <strong>' + ns.length + ' notions</strong> repérées dans votre dossier. Dites la définition à voix haute, puis vérifiez.</p>' +
+        '<div class="oral-actions"><button type="button" class="btn" id="rv-next">Tirer une notion</button><button type="button" class="btn ghost" id="rv-all">Voir toute la liste</button></div></div>' +
+        '<div class="training card" id="revision"><p class="muted">Cliquez sur « Tirer une notion ».</p></div>';
     } else {
       const base = (window.RUBRIQUES.find(function (x) { return x.id === 'r9'; }).fields.find(function (x) { return x.id === 'questions'; }).rows).map(function (q) { return { q: q.label, rep: ((rd('r9').questions || {})[q.id] || {}).reponse || '' }; });
       const pieges = questionsPieges().map(function (q) { return { q: q, rep: '', piege: true }; });
@@ -848,7 +939,45 @@
     if ($('#or-present')) $('#or-present').addEventListener('click', function () { present(sl); });
     if ($('#or-print')) $('#or-print').addEventListener('click', function () { document.body.classList.add('print-slides'); window.print(); setTimeout(function () { document.body.classList.remove('print-slides'); }, 500); });
     if ($('#tr-next')) $('#tr-next').addEventListener('click', drawQuestion);
+    if ($('#rv-next')) $('#rv-next').addEventListener('click', drawNotion);
+    if ($('#rv-all')) $('#rv-all').addEventListener('click', function () {
+      const R2 = S.revision;
+      $('#revision').innerHTML = '<div class="rv-list">' + R2.list.map(function (e) { return '<details class="rv-item"><summary>' + esc(e.terme) + (R2.sues[e.id] ? ' <span class="tag ok">je sais</span>' : '') + '</summary>' + lexCard(e, true) + '</details>'; }).join('') + '</div>';
+    });
     window.scrollTo(0, 0);
+  }
+
+  /** Notions du lexique présentes dans le dossier de l'élève, plus les incontournables de la partie financière. */
+  function notionsDuDossier() {
+    const txt = [];
+    (function walk(o) { if (o == null) return; if (typeof o === 'string') txt.push(o); else if (typeof o === 'object') Object.keys(o).forEach(function (k) { walk(o[k]); }); })(S.data);
+    const all = txt.join(' \n ');
+    const ids = {};
+    LEX_RE.forEach(function (L) { if (!ids[L.id] && L.re.test(all)) ids[L.id] = true; });
+    const f = finance();
+    ['ca', 'cr', 'pf', 'seuil', 'marge-secu', 'bfr', 'tresorerie', 'caf', 'charges-fixes', 'charges-variables', 'tva', 'ht-ttc', 'amort', 'statut'].forEach(function (id) { if (LEX_BY[id]) ids[id] = true; });
+    const st = { 'Micro-entreprise': 'micro', 'Entreprise individuelle au réel': 'ei', 'EURL': 'eurl', 'SARL': 'sarl', 'SASU': 'sasu', 'SAS': 'sas' }[rd('r8').statut];
+    if (st && LEX_BY[st]) ids[st] = true;
+    if (f.societe && LEX_BY.is) ids.is = true;
+    if (f.ressources && f.ressources.emprunt && LEX_BY.emprunt) { ids.emprunt = true; if (LEX_BY.annuite) ids.annuite = true; }
+    return LEX.filter(function (e) { return ids[e.id]; });
+  }
+
+  function drawNotion() {
+    const R2 = S.revision;
+    const pool = R2.list.filter(function (e) { return !R2.sues[e.id]; });
+    const src = pool.length ? pool : R2.list;
+    if (!src.length) return;
+    let e; do { e = src[Math.floor(Math.random() * src.length)]; } while (src.length > 1 && e === R2.cur);
+    R2.cur = e;
+    const reste = R2.list.length - Object.keys(R2.sues).length;
+    $('#revision').innerHTML = '<p class="muted small">' + (pool.length ? reste + ' notion' + (reste > 1 ? 's' : '') + ' à revoir' : 'Toutes les notions sont sues : on recommence pour s’entraîner.') + '</p>' +
+      '<p class="tr-q">' + esc(e.terme) + '</p><p class="muted">Définissez-la en une ou deux phrases, avec un exemple tiré de votre projet.</p>' +
+      '<button type="button" class="btn ghost small" id="rv-show">Voir la définition</button><div id="rv-def" hidden class="rv-def">' + lexCard(e, true) +
+      '<div class="oral-actions"><button type="button" class="btn small" id="rv-ok">Je savais</button><button type="button" class="btn ghost small" id="rv-ko">À revoir</button></div></div>';
+    $('#rv-show').addEventListener('click', function () { $('#rv-def').hidden = false; $('#rv-show').hidden = true; });
+    $('#rv-ok').addEventListener('click', function () { R2.sues[e.id] = true; drawNotion(); });
+    $('#rv-ko').addEventListener('click', drawNotion);
   }
 
   function drawQuestion() {
@@ -987,7 +1116,8 @@
         '<span class="nav-num">' + (p >= 100 ? '✓' : (locked ? '🔒' : r.num)) + '</span>' +
         '<span class="nav-txt"><span class="nav-title">' + esc(r.titre) + '</span><span class="nav-sub">' + esc(r.page) + (comp ? ' · ' + esc(comp) : '') + '</span>' +
         '<span class="nav-bar"><span style="width:' + p + '%"></span></span></span></button></li>';
-    }).join('') + '</ol>';
+    }).join('') + '</ol>' +
+      '<button type="button" class="nav-item nav-lex' + (S.view === 'lexique' ? ' active' : '') + '" data-lexique=""><span class="nav-num">?</span><span class="nav-txt"><span class="nav-title">Lexique</span><span class="nav-sub">' + LEX.length + ' notions avec leurs sources</span></span></button>';
     const g = globalPct();
     const gb = $('#global-bar'), gp = $('#global-pct');
     if (gb) gb.style.width = g + '%';
@@ -1027,8 +1157,116 @@
 
     main.innerHTML = h;
     typo(main);
+    S.lexUsed = lexify(main, {});
     refreshStatus();
     if (r.id === 'r8') refreshFinanceTotals();
+  }
+
+
+  /* ================= Lexique : mots cliquables, bulle de définition, page dédiée ================= */
+  const LEX = window.LEXIQUE || [];
+  const LEX_BY = {};
+  LEX.forEach(function (e) { LEX_BY[e.id] = e; });
+  const LEX_RE = (function () {
+    const list = [];
+    LEX.forEach(function (e) {
+      (e.mots || []).forEach(function (m) {
+        const acronyme = /^[A-ZÉ0-9 -]{2,8}$/.test(m) && m === m.toUpperCase();
+        const src = m.replace(/[.*+?^${}()|[\]\\]/g, '\\$&').replace(/[’']/g, '[’\']').replace(/ /g, '[\\s\\u00a0\\u202f]+');
+        list.push({ id: e.id, len: m.length, re: new RegExp('(^|[^\\p{L}\\p{N}])(' + src + ')(?![\\p{L}\\p{N}])', acronyme ? 'u' : 'iu') });
+      });
+    });
+    return list.sort(function (a, b) { return b.len - a.len; });
+  })();
+  const LEX_ZONES = '.objectif, .intro li, .disc-body, .help, .hint, .note, ol.steps li, .msgs li, .lex-def';
+
+  /** Rend cliquables les notions du lexique (une seule fois chacune par page). */
+  function lexify(root, used, skipId) {
+    if (!root || !LEX_RE.length) return;
+    used = used || {};
+    if (skipId) used[skipId] = true;
+    const zones = root.matches && root.matches(LEX_ZONES) ? [root] : Array.prototype.slice.call(root.querySelectorAll(LEX_ZONES));
+    zones.forEach(function (z) {
+      const walker = document.createTreeWalker(z, NodeFilter.SHOW_TEXT, { acceptNode: function (n) {
+        return n.parentNode.closest('button, a, input, textarea, select, .lex, label > span.req') ? NodeFilter.FILTER_REJECT : NodeFilter.FILTER_ACCEPT; } });
+      const nodes = [];
+      while (walker.nextNode()) nodes.push(walker.currentNode);
+      nodes.forEach(function (node) {
+        let n = node;
+        while (n) {
+          let best = null;
+          for (let i = 0; i < LEX_RE.length; i++) {
+            const L = LEX_RE[i];
+            if (used[L.id]) continue;
+            const m = L.re.exec(n.nodeValue);
+            if (m && (!best || m.index + m[1].length < best.at)) best = { at: m.index + m[1].length, txt: m[2], id: L.id };
+          }
+          if (!best) break;
+          used[best.id] = true;
+          const mid = n.splitText(best.at);
+          const rest = mid.splitText(best.txt.length);
+          const b = document.createElement('button');
+          b.type = 'button'; b.className = 'lex'; b.setAttribute('data-lex', best.id); b.title = 'Définition : ' + LEX_BY[best.id].terme;
+          b.textContent = mid.nodeValue;
+          mid.parentNode.replaceChild(b, mid);
+          n = rest;
+        }
+      });
+    });
+    return used;
+  }
+
+  function lexCard(e, full) {
+    return '<span class="lex-cat">' + esc(e.cat) + '</span><h3>' + esc(e.terme) + '</h3><p class="lex-def">' + esc(e.def) + '</p>' +
+      (e.ex ? '<p class="lex-ex"><strong>Exemple :</strong> ' + esc(e.ex) + '</p>' : '') +
+      (e.lien ? '<p class="lex-link"><a href="' + esc(e.lien.url) + '" target="_blank" rel="noopener">' + esc(e.lien.label) + '</a></p>' : '') +
+      (full ? '' : '<button type="button" class="btn ghost small" data-lexique="' + e.id + '">Tout le lexique</button>');
+  }
+
+  function lexClose() { const p = $('#lex-pop'); if (p) p.remove(); document.removeEventListener('keydown', lexKey); }
+  function lexKey(e) { if (e.key === 'Escape') lexClose(); }
+  function lexOpen(btn) {
+    const e = LEX_BY[btn.getAttribute('data-lex')];
+    if (!e) return;
+    lexClose();
+    const pop = document.createElement('div');
+    pop.id = 'lex-pop'; pop.className = 'lex-pop'; pop.setAttribute('role', 'dialog'); pop.setAttribute('aria-label', e.terme);
+    pop.innerHTML = '<button type="button" class="lex-x" aria-label="Fermer">✕</button>' + lexCard(e);
+    ($('#app') || document.body).appendChild(pop);
+    lexify(pop.querySelector('.lex-def'), {}, e.id);
+    if (window.innerWidth > 640) {
+      const r = btn.getBoundingClientRect();
+      const w = pop.offsetWidth, h = pop.offsetHeight;
+      let left = Math.min(Math.max(12, r.left), window.innerWidth - w - 12);
+      let top = r.bottom + 8;
+      if (top + h > window.innerHeight - 12 && r.top - h - 8 > 12) top = r.top - h - 8;
+      pop.style.left = left + 'px'; pop.style.top = (top + window.scrollY) + 'px';
+    } else pop.classList.add('sheet');
+    document.addEventListener('keydown', lexKey);
+    const x = pop.querySelector('.lex-x'); if (x) x.focus();
+  }
+
+  function renderLexique(q, cat) {
+    lexClose();
+    S.view = 'lexique';
+    renderNav();
+    document.body.classList.remove('nav-open');
+    const main = $('#main');
+    q = q || ''; cat = cat || '';
+    const norm = function (t) { return String(t).toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''); };
+    const nq = norm(q);
+    const list = LEX.filter(function (e) { return (!cat || e.cat === cat) && (!nq || norm(e.terme + ' ' + e.def + ' ' + (e.mots || []).join(' ')).indexOf(nq) >= 0); });
+    const cats = (window.LEXIQUE_CATS || []).filter(function (c) { return list.some(function (e) { return e.cat === c; }); });
+    main.innerHTML = '<article class="rubrique lexique"><header class="rub-head"><span class="rub-kicker">Lexique</span><h1>Les notions à connaître</h1>' +
+      '<p class="objectif">' + LEX.length + ' notions de gestion, de droit, de fiscalité, de RH et de marketing, avec un lien vers la source officielle. Les mots soulignés en pointillés dans le site renvoient ici.</p></header>' +
+      '<div class="lex-tools"><input type="search" id="lex-q" placeholder="Chercher une notion : BFR, bail, SASU…" value="' + esc(q) + '" aria-label="Chercher une notion">' +
+      '<div class="lex-chips"><button type="button" class="chip' + (!cat ? ' on' : '') + '" data-lexcat="">Toutes</button>' + (window.LEXIQUE_CATS || []).map(function (c) { return '<button type="button" class="chip' + (cat === c ? ' on' : '') + '" data-lexcat="' + esc(c) + '">' + esc(c) + '</button>'; }).join('') + '</div></div>' +
+      '<div id="lex-list">' + (list.length ? cats.map(function (c) {
+        return '<section class="lex-group"><h2>' + esc(c) + '</h2><div class="lex-grid">' + list.filter(function (e) { return e.cat === c; }).map(function (e) { return '<article class="lex-item card" id="lex-' + e.id + '">' + lexCard(e, true) + '</article>'; }).join('') + '</div></section>';
+      }).join('') : '<p class="muted">Aucune notion ne correspond. Essayez un autre mot.</p>') + '</div></article>';
+    main.querySelectorAll('.lex-item').forEach(function (a) { lexify(a.querySelector('.lex-def'), {}, a.id.slice(4)); });
+    typo(main);
+    S.lexState = { q: q, cat: cat };
   }
 
   /* Espaces fines insécables avant : ; ? ! » et après « (typographie française) */
@@ -1089,6 +1327,19 @@
 
   function onInput(e) {
     const t = e.target;
+    if (t.id === 'lex-q' && e.type === 'input') {
+      const st = S.lexState || {};
+      renderLexique(t.value, st.cat);
+      const inp = $('#lex-q'); if (inp) { inp.focus(); inp.setSelectionRange(inp.value.length, inp.value.length); }
+      return;
+    }
+    if (t.classList && t.classList.contains('sim-range')) {
+      const k = t.getAttribute('data-sim'), d = SIM_DEF.find(function (x) { return x.k === k; });
+      simState()[k] = Number(t.value);
+      const o = $('#sim-o-' + k); if (o) o.textContent = simFmt(Number(t.value), d.unit);
+      const out = $('#sim-out'); if (out) out.innerHTML = simOutHtml();
+      return;
+    }
     const p = t.getAttribute && t.getAttribute('data-path');
     if (!p || S.readOnly) return;
     if (e.type === 'change' && t.type !== 'checkbox' && t.tagName !== 'SELECT') return;
@@ -1105,7 +1356,8 @@
     if (t.getAttribute('data-live') === 'radar') { const el = $('#radar-' + rid); if (el) el.innerHTML = radarSvg(rd(rid).hexa || {}); }
     if (t.getAttribute('data-live') === 'carte') { const el = $('#carte-svg'); if (el) el.innerHTML = carteSvg(rd(rid).carte || {}); }
     if (rid === 'r6') { const el = $('#ca-results'); if (el) el.innerHTML = caResultsHtml(); const tot = $('[data-total="r6|plan_actions"]'); if (tot) tot.innerHTML = 'Total : <strong>' + eur(C.planActionsTotal(rd('r6'))) + '</strong>'; }
-    if (rid === 'r8') { const el = $('#fin-results'); if (el) el.innerHTML = financeResultsHtml(); refreshFinanceTotals(); }
+    if (rid === 'r8' || rid === 'r6') { const so = $('#sim-out'); if (so) so.innerHTML = simOutHtml(); else { const sb = $('#fin-sim'); if (sb) sb.innerHTML = simHtml(); } }
+    if (rid === 'r8') { const el = $('#fin-results'); if (el) { el.innerHTML = financeResultsHtml(); lexify(el, Object.assign({}, S.lexUsed)); } refreshFinanceTotals(); }
     if (rid === 'r2' && path[1].indexOf('reprise_') === 0) { const el = $('#reprise-box'); if (el) el.innerHTML = repriseHtml(); }
     if (rid === 'r9' && path[1].indexOf('coh_') === 0) { const b = $('#depot-box'); if (b) b.innerHTML = depotHtml(); }
     if (rid === 'r9') { const b = $('#depot-box'); if (b && path[1] !== 'oral' && path[1] !== 'questions') b.innerHTML = depotHtml(); }
@@ -1113,8 +1365,15 @@
   }
 
   async function onClick(e) {
+    const pop = $('#lex-pop');
+    if (pop && !e.target.closest('#lex-pop') && !e.target.closest('[data-lex]')) lexClose();
     const t = e.target.closest('button, a');
     if (!t) return;
+    if (t.classList.contains('lex-x')) { lexClose(); return; }
+    if (t.id === 'sim-reset') { S.sim = null; const sb = $('#fin-sim'); if (sb) { sb.innerHTML = simHtml(); lexify(sb, Object.assign({}, S.lexUsed)); } return; }
+    if (t.hasAttribute('data-lex')) { e.preventDefault(); lexOpen(t); return; }
+    if (t.hasAttribute('data-lexique')) { const id = t.getAttribute('data-lexique'); renderLexique('', ''); if (id) { const a = document.getElementById('lex-' + id); if (a) { a.scrollIntoView({ block: 'center' }); a.classList.add('flash'); } } else window.scrollTo(0, 0); return; }
+    if (t.hasAttribute('data-lexcat')) { renderLexique((S.lexState || {}).q, t.getAttribute('data-lexcat')); return; }
     if (t.id === 'brand') { e.preventDefault(); if (Store.profile && Store.profile.role === 'prof') renderProf(); else go(firstIncomplete()); return; }
     if (t.id === 'menu-btn') { document.body.classList.toggle('nav-open'); return; }
     if (t.id === 'btn-logout') { await saveNow(); await Store.signOut(); location.hash = ''; boot(); return; }
@@ -1265,8 +1524,10 @@
         const fin = finance();
         const dd = rd('r8');
         const pf = '<h4>Plan de financement initial</h4><table class="doc-table"><thead><tr><th>Besoins</th><th class="num">Montant</th><th>Ressources</th><th class="num">Montant</th></tr></thead><tbody>' +
-          zip([['Rachat du fonds de commerce', fin.besoins.fonds], ['Investissements amortissables', fin.besoins.invest], ['Investissements non amortis', fin.besoins.non_amort], ['Stock de départ', fin.besoins.stock], ['Frais de lancement', fin.besoins.frais], ['Trésorerie de départ', fin.besoins.treso]].filter(function (x) { return x[1]; }),
-            [['Apport personnel', fin.ressources.apport], ['Prêt d’honneur', fin.ressources.honneur], ['Aides et subventions', fin.ressources.aides], ['Emprunt bancaire' + (dd.duree_emprunt ? ' (' + C.num(dd.duree_emprunt) + ' ans' + (dd.taux_emprunt ? ', ' + C.num(dd.taux_emprunt).toLocaleString('fr-FR') + ' %' : '') + ')' : ''), fin.ressources.emprunt]].filter(function (x) { return x[1]; })) +
+          zip([['Rachat du fonds de commerce', fin.besoins.fonds], ['Investissements amortissables', C.num(dd.b_invest)], ['Investissements non amortis', C.num(dd.b_non_amort)], ['Stock de départ', C.num(dd.b_stock)], ['Frais de lancement', C.num(dd.b_frais)], ['Trésorerie de départ', C.num(dd.b_treso)]]
+              .concat(fin.X.besoins.map(function (x) { return [(x.lib || 'Autre besoin') + (x.nature ? ' (' + x.nature.toLowerCase() + ')' : ''), C.num(x.montant)]; })).filter(function (x) { return x[1]; }),
+            [['Apport personnel', C.num(dd.r_apport)], ['Prêt d’honneur', C.num(dd.r_honneur)], ['Aides et subventions', C.num(dd.r_aides)], ['Emprunt bancaire' + (dd.duree_emprunt ? ' (' + C.num(dd.duree_emprunt) + ' ans' + (dd.taux_emprunt ? ', ' + C.num(dd.taux_emprunt).toLocaleString('fr-FR') + ' %' : '') + ')' : ''), C.num(dd.r_emprunt)]]
+              .concat(fin.X.ressources.map(function (x) { return [(x.lib || 'Autre ressource') + (x.nature === 'Emprunt' && x.duree ? ' (' + C.num(x.duree) + ' ans, ' + C.num(x.taux).toLocaleString('fr-FR') + ' %)' : ''), C.num(x.montant)]; })).filter(function (x) { return x[1]; })) +
           '<tr class="total"><th>Total</th><td class="num">' + eur(fin.totBesoins) + '</td><th>Total</th><td class="num">' + eur(fin.totRessources) + '</td></tr></tbody></table>';
         if (!fin.CA) return pf;
         const fr = financeResultsHtml();

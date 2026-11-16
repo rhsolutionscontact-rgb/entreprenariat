@@ -340,7 +340,29 @@ table.prof td { vertical-align: middle; }
 }
 
 /* ---------- Impression ---------- */
+[hidden] { display: none !important; }
+/* ---------- Simulateur « Et si… ? » ---------- */
+.sim { border: 2px solid var(--citron); }
+.sim-ctrls { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px 18px; margin: 12px 0 6px; }
+.sim-ctrl { display: flex; flex-direction: column; gap: 6px; font-size: .92rem; }
+.sim-lab { display: flex; justify-content: space-between; gap: 8px; font-weight: 600; color: var(--brun); }
+.sim-lab output { font-variant-numeric: tabular-nums; color: var(--ambre); min-width: 4.5em; text-align: right; }
+.sim-range { width: 100%; accent-color: var(--brun); }
+.sim-kpis { grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); }
+.sim-phrase { background: var(--creme); border-radius: 10px; padding: 10px 14px; margin: 8px 0; }
+.sim-warn { color: var(--rouge); font-weight: 600; margin: 6px 0 10px; }
+/* ---------- Révision des notions ---------- */
+.rv-def { margin-top: 12px; border-top: 1px solid var(--trait); padding-top: 12px; }
+.rv-def h3 { display: none; }
+.rv-list { display: grid; gap: 8px; }
+.rv-item { border: 1px solid var(--trait); border-radius: 10px; padding: 8px 12px; background: #fff; }
+.rv-item summary { cursor: pointer; font-weight: 600; color: var(--brun); }
+.rv-item[open] summary { margin-bottom: 8px; }
+.rv-item h3 { display: none; }
+.tag.ok { background: var(--vert-clair); color: var(--vert); }
+
 @media print {
+  #fin-sim { display: none !important; }
   @page { margin: 14mm; }
   body { background: #fff; font-size: 11pt; }
   .topbar, .sidebar, .foot, .no-print, .pager { display: none !important; }
@@ -517,3 +539,39 @@ table.result.longueur { background: #fff; margin: 8px 0; }
 .slide .sl-body:has(.sl-canvas) { justify-content: stretch; }
 .apercu-bar { flex-wrap: wrap; }
 .grille-doc input.note20 { width: 90px; }
+
+/* ---------- Lignes ajoutées à la main (finances) ---------- */
+.x-lines { margin: 14px 0 6px; padding: 14px 16px 6px; border: 1px dashed var(--trait); border-radius: 12px; background: var(--creme); }
+.x-lines .grid-field { margin-bottom: 8px; }
+.x-lines .grid-field > label { font-family: var(--serif); font-size: 1rem; color: var(--brun); }
+.x-lines table.grid input, .x-lines table.grid select { min-width: 90px; }
+.x-lines table.grid th.w-lg, .x-lines table.grid td.w-lg { min-width: 170px; }
+
+/* ---------- Lexique : mots cliquables et bulle de définition ---------- */
+button.lex { all: unset; cursor: help; color: inherit; border-bottom: 1.5px dotted var(--ambre); text-decoration: none; border-radius: 2px; }
+button.lex:hover { background: var(--ambre-clair); }
+button.lex:focus-visible { outline: 3px solid var(--bleu); outline-offset: 1px; }
+.lex-pop { position: absolute; z-index: 200; width: min(380px, calc(100vw - 24px)); background: var(--papier); color: var(--encre); border: 1px solid var(--trait); border-radius: 14px; box-shadow: 0 18px 40px -12px rgba(16, 42, 67, .35); padding: 16px 18px 14px; }
+.lex-pop.sheet { position: fixed; left: 0; right: 0; bottom: 0; top: auto; width: auto; border-radius: 18px 18px 0 0; max-height: 70vh; overflow-y: auto; padding-bottom: calc(16px + env(safe-area-inset-bottom)); }
+.lex-pop h3, .lex-item h3 { margin: 6px 0 6px; font-size: 1.1rem; }
+.lex-pop .lex-x { position: absolute; top: 8px; right: 8px; border: 0; background: transparent; color: var(--gris); font-size: 1rem; width: 32px; height: 32px; border-radius: 50%; cursor: pointer; }
+.lex-pop .lex-x:hover { background: var(--creme); }
+.lex-cat { display: inline-block; font-size: .75rem; font-weight: 700; color: var(--brun); background: var(--citron); padding: 2px 8px; border-radius: 999px; }
+.lex-def { margin: 0 0 8px; }
+.lex-ex { margin: 0 0 8px; font-size: .92rem; color: var(--brun-2); background: var(--creme); padding: 6px 10px; border-radius: 8px; }
+.lex-link { margin: 0 0 10px; font-size: .9rem; }
+.lex-link a { color: var(--ambre); font-weight: 600; }
+.nav-lex { margin-top: 10px; border-top: 1px solid var(--trait); border-radius: 0 0 10px 10px; padding-top: 12px; }
+.nav-lex .nav-num { background: var(--citron); border-color: var(--citron); color: var(--brun); }
+.lex-tools { position: sticky; top: 60px; z-index: 5; background: var(--creme); padding: 8px 0 12px; margin-bottom: 8px; }
+.lex-tools input[type=search] { font-size: 1.05rem; padding: 12px 16px; border-radius: 999px; }
+.lex-chips { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.chip { border: 1px solid var(--trait); background: var(--papier); color: var(--brun); font: 600 .85rem var(--font); padding: 6px 12px; border-radius: 999px; cursor: pointer; }
+.chip.on { background: var(--brun); border-color: var(--brun); color: #fff; }
+.lex-group h2 { margin: 18px 0 10px; }
+.lex-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; }
+.lex-item { margin: 0; scroll-margin-top: 160px; }
+.lex-item.flash { animation: lexflash 1.6s ease-out; }
+@keyframes lexflash { 0% { box-shadow: 0 0 0 4px var(--citron); } 100% { box-shadow: var(--shadow); } }
+@media (prefers-reduced-motion: reduce) { .lex-item.flash { animation: none; outline: 3px solid var(--citron); } }
+@media print { button.lex { border: 0; } .lex-pop { display: none; } }

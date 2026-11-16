@@ -95,24 +95,76 @@
   }
 
   /* ---------- Rubrique 8 : finances ---------- */
+  /* ---------- Lignes ajoutées par l'étudiant ---------- */
+  const NAT_BESOINS = ['Investissement amortissable', 'Investissement non amortissable', 'Stock de départ', 'Frais de lancement', 'Trésorerie supplémentaire'];
+  const NAT_RESSOURCES = ['Apport (personnel ou associé)', 'Prêt d’honneur', 'Aide ou subvention', 'Emprunt'];
+  function rowsOf(arr) {
+    return (Array.isArray(arr) ? arr : []).filter(function (x) { return x && (String(x.lib || '').trim() !== '' || num(x.montant) || num(x.pct)); });
+  }
+  /** Regroupe les lignes libres de la rubrique 8 et repère celles qui n'ont pas de source. */
+  function extrasCalc(r8) {
+    r8 = r8 || {};
+    const xb = rowsOf(r8.x_besoins), xr = rowsOf(r8.x_ressources), xc = rowsOf(r8.x_charges), xv = rowsOf(r8.x_var), xa = rowsOf(r8.x_recettes);
+    const by = function (rows, nat) { return rows.filter(function (x) { return (x.nature || '') === nat; }).reduce(function (t, x) { return t + num(x.montant); }, 0); };
+    const amortLines = xb.filter(function (x) { return (x.nature || NAT_BESOINS[0]) === NAT_BESOINS[0]; })
+      .map(function (x) { return { lib: x.lib || 'Investissement', montant: num(x.montant), duree: num(x.duree) || num(r8.duree_amort) || 5 }; });
+    const loans = xr.filter(function (x) { return x.nature === 'Emprunt'; }).map(function (x) { return { lib: x.lib || 'Emprunt', montant: num(x.montant), taux: num(x.taux), tauxVide: x.taux === undefined || String(x.taux).trim() === '', duree: num(x.duree) || 5 }; });
+    const sansSource = [];
+    [[xb, 'besoin'], [xr, 'ressource'], [xc, 'charge'], [xv, 'charge variable'], [xa, 'recette']].forEach(function (g) {
+      g[0].forEach(function (x) { if (!String(x.src || '').trim()) sansSource.push((x.lib || 'Ligne sans nom') + ' (' + g[1] + ')'); });
+    });
+    const annexes = xa.reduce(function (t, x) { return t + num(x.montant); }, 0);
+    const annexesVar = xa.reduce(function (t, x) { return t + num(x.montant) * num(x.cout) / 100; }, 0);
+    const annexesTva = xa.reduce(function (t, x) { return t + num(x.montant) * (x.tva === undefined || x.tva === '' ? 20 : num(String(x.tva).replace(',', '.'))) / 100; }, 0);
+    return {
+      besoins: xb, ressources: xr, charges: xc, variables: xv, recettes: xa, sansSource: sansSource,
+      b: { invest: amortLines.reduce(function (t, x) { return t + x.montant; }, 0), non_amort: by(xb, NAT_BESOINS[1]), stock: by(xb, NAT_BESOINS[2]), frais: by(xb, NAT_BESOINS[3]), treso: by(xb, NAT_BESOINS[4]) },
+      r: { apport: by(xr, NAT_RESSOURCES[0]), honneur: by(xr, NAT_RESSOURCES[1]), aides: by(xr, NAT_RESSOURCES[2]), emprunt: by(xr, NAT_RESSOURCES[3]) },
+      amortLines: amortLines, loans: loans,
+      chargesTva: xc.filter(function (x) { return x.tva !== 'Sans TVA'; }).reduce(function (t, x) { return t + num(x.montant); }, 0),
+      chargesSansTva: xc.filter(function (x) { return x.tva === 'Sans TVA'; }).reduce(function (t, x) { return t + num(x.montant); }, 0),
+      varPct: xv.reduce(function (t, x) { return t + num(x.pct); }, 0),
+      varPctTva: xv.filter(function (x) { return x.tva !== 'Sans TVA'; }).reduce(function (t, x) { return t + num(x.pct); }, 0),
+      annexes: annexes, annexesVar: annexesVar, annexesTvaTaux: annexes > 0 ? annexesTva / annexes * 100 : 0
+    };
+  }
+  /** Tous les emprunts (banque + lignes ajoutées) : tableau annuel cumulé. */
+  function empruntsCumules(r8, x) {
+    const all = [{ montant: num(r8.r_emprunt), taux: num(r8.taux_emprunt), duree: num(r8.duree_emprunt) || 5 }].concat(x.loans).filter(function (l) { return l.montant > 0; });
+    const tabs = all.map(function (l) { return tableauEmprunt(l.montant, l.taux, l.duree); });
+    const n = tabs.reduce(function (m, t) { return Math.max(m, t.length); }, 0);
+    const out = [];
+    for (let k = 0; k < n; k++) {
+      const o = { annee: k + 1, debut: 0, interets: 0, capital: 0, annuite: 0, fin: 0 };
+      tabs.forEach(function (t) { const l = t[k]; if (l) { o.debut += l.debut; o.interets += l.interets; o.capital += l.capital; o.annuite += l.annuite; o.fin += l.fin; } });
+      out.push(o);
+    }
+    return { lignes: out, nb: all.length };
+  }
+  /** Dotation aux amortissements de l'année y (1, 2, 3…), ligne par ligne. */
+  function dotationAn(f, y) {
+    return f.amortLines.reduce(function (t, l) { return t + (y <= l.duree && l.duree > 0 ? l.montant / l.duree : 0); }, 0);
+  }
+
   function financeCalc(r8, ca) {
     r8 = r8 || {};
     const CA = ca ? ca.caPrudent : 0;
+    const X = extrasCalc(r8);
 
     // Plan de financement
     const besoins = {
-      invest: num(r8.b_invest),
+      invest: num(r8.b_invest) + X.b.invest,
       fonds: num(r8.b_fonds),
-      non_amort: num(r8.b_non_amort),
-      stock: num(r8.b_stock),
-      frais: num(r8.b_frais),
-      treso: num(r8.b_treso)
+      non_amort: num(r8.b_non_amort) + X.b.non_amort,
+      stock: num(r8.b_stock) + X.b.stock,
+      frais: num(r8.b_frais) + X.b.frais,
+      treso: num(r8.b_treso) + X.b.treso
     };
     const ressources = {
-      apport: num(r8.r_apport),
-      honneur: num(r8.r_honneur),
-      emprunt: num(r8.r_emprunt),
-      aides: num(r8.r_aides)
+      apport: num(r8.r_apport) + X.r.apport,
+      honneur: num(r8.r_honneur) + X.r.honneur,
+      emprunt: num(r8.r_emprunt) + X.r.emprunt,
+      aides: num(r8.r_aides) + X.r.aides
     };
     const totBesoins = sum(besoins);
     const totRessources = sum(ressources);
@@ -120,12 +172,13 @@
 
     // Charges calculées automatiquement
     const dureeAmort = num(r8.duree_amort) || 5;
-    const amort = besoins.invest / dureeAmort;
+    const amortLines = (num(r8.b_invest) ? [{ lib: 'Investissements', montant: num(r8.b_invest), duree: dureeAmort }] : []).concat(X.amortLines);
+    const amort = amortLines.reduce(function (t, l) { return t + (l.duree > 0 ? l.montant / l.duree : 0); }, 0);
     const tauxEmprunt = num(r8.taux_emprunt);
-    const dureeEmprunt = num(r8.duree_emprunt) || 5;
-    const interets = ressources.emprunt * tauxEmprunt / 100;
-    const ann = annuite(ressources.emprunt, tauxEmprunt, dureeEmprunt);
-    const capitalAn1 = Math.max(0, ann - interets);
+    const EMP = empruntsCumules(r8, X);
+    const interets = EMP.lignes.length ? EMP.lignes[0].interets : 0;
+    const ann = EMP.lignes.length ? EMP.lignes[0].annuite : 0;
+    const capitalAn1 = EMP.lignes.length ? EMP.lignes[0].capital : 0;
     const remuNet = num(r8.remu_net);
     const tauxCotis = r8.taux_cotis === undefined || r8.taux_cotis === '' ? 0 : num(r8.taux_cotis);
     const micro = r8.statut === 'Micro-entreprise';
@@ -134,8 +187,10 @@
     const remu = remuNet * 12 + cotisations;
 
     // Compte de résultat
-    const tauxVar = num(r8.taux_var);
+    const tauxAchats = num(r8.taux_var);
+    const tauxVar = tauxAchats + X.varPct;
     const variables = CA * tauxVar / 100;
+    const annexes = X.annexes, annexesVar = X.annexesVar, margeAnnexes = annexes - annexesVar;
     const fixesSaisis = {
       loyer: num(r8.c_loyer),
       energie: num(r8.c_energie),
@@ -144,17 +199,20 @@
       comm: num(r8.c_comm),
       salaires: num(r8.c_salaires),
       autres: num(r8.c_autres),
-      impots: num(r8.c_impots)
+      impots: num(r8.c_impots),
+      ajoutees: X.chargesTva + X.chargesSansTva
     };
     const fixes = sum(fixesSaisis) + besoins.frais + remu + interets + amort;
-    const resultat = CA - variables - fixes;
+    const resultat = CA + annexes - variables - annexesVar - fixes;
     const societe = isSociete(r8.statut) && !(r8.statut === 'EURL' && r8.regime_fiscal === 'IR');
     const is = societe ? impotSocietes(resultat) : 0;
     const resultatNet = resultat - is;
 
     // Seuil de rentabilité
     const tmcv = CA > 0 ? (CA - variables) / CA : (1 - tauxVar / 100);
-    const seuil = tmcv > 0 ? fixes / tmcv : 0;
+    // Les recettes annexes couvrent une partie des charges fixes : le reste doit l'être par les ventes principales
+    const fixesNet = Math.max(0, fixes - margeAnnexes);
+    const seuil = tmcv > 0 ? fixesNet / tmcv : 0;
     const jours = ca ? ca.jours : 0;
     const panierHT = ca ? ca.panierHT : 0;
     const seuilJour = jours > 0 ? seuil / jours : 0;
@@ -163,7 +221,7 @@
     const clientsPrudent = ca ? ca.sc.prudent.clients : 0;
     const margeSecu = CA > 0 ? (CA - seuil) / CA : 0;
     const pointMortJour = CA > 0 ? Math.ceil(seuil / CA * 360) : 0;
-    const stress = CA * 0.8 * tmcv - fixes;
+    const stress = (CA * tmcv + margeAnnexes) * 0.8 - fixes;
 
     // Trésorerie et banque
     const decaissMensuel = (fixes - amort - besoins.frais + capitalAn1) / 12;
@@ -191,7 +249,10 @@
       else if (margeSecu < 0.10) alertes.push('Marge de sécurité inférieure à 10 % : projet fragile, à retravailler.');
       else ok.push('Marge de sécurité de ' + pct(margeSecu) + '.');
     }
-    if (ressources.emprunt > 0 && tauxEmprunt <= 0) alertes.push('Indiquez le taux de votre emprunt pour calculer les intérêts.');
+    if (num(r8.r_emprunt) > 0 && tauxEmprunt <= 0) alertes.push('Indiquez le taux de votre emprunt pour calculer les intérêts.');
+    X.loans.forEach(function (l) { if (l.montant > 0 && l.tauxVide) alertes.push('Emprunt « ' + l.lib + ' » : indiquez son taux (0 si c’est un prêt à taux zéro).'); });
+    if (X.sansSource.length) alertes.push('Ligne' + (X.sansSource.length > 1 ? 's' : '') + ' ajoutée' + (X.sansSource.length > 1 ? 's' : '') + ' sans source : ' + X.sansSource.join(', ') + '. Le jury demandera d’où vient chaque chiffre.');
+    if (CA > 0 && annexes > CA * 0.5) alertes.push('Vos recettes annexes dépassent la moitié de vos ventes principales : est-ce vraiment une activité « annexe » ? Revoyez votre modèle d’affaires.');
     if (ann > 0 && CA > 0) {
       if (ratioCaf >= 1.2) ok.push('La CAF couvre ' + ratioCaf.toFixed(1).replace('.', ',') + ' fois l’annuité d’emprunt.');
       else alertes.push('Votre CAF couvre mal l’annuité d’emprunt (' + ratioCaf.toFixed(1).replace('.', ',') + ' fois) : la banque hésitera.');
@@ -203,7 +264,9 @@
 
     return {
       CA: CA, besoins: besoins, ressources: ressources, totBesoins: totBesoins, totRessources: totRessources, quasiFP: quasiFP, partFP: partFP,
-      amort: amort, interets: interets, annuite: ann, capitalAn1: capitalAn1, remu: remu, cotisations: cotisations, micro: micro,
+      amort: amort, amortLines: amortLines, empLignes: EMP.lignes, nbEmprunts: EMP.nb, X: X, tauxAchats: tauxAchats,
+      annexes: annexes, annexesVar: annexesVar, margeAnnexes: margeAnnexes, fixesNet: fixesNet, caTotal: CA + annexes,
+      interets: interets, annuite: ann, capitalAn1: capitalAn1, remu: remu, cotisations: cotisations, micro: micro,
       tauxVar: tauxVar, variables: variables, fixesSaisis: fixesSaisis, fixes: fixes, resultat: resultat,
       societe: societe, is: is, resultatNet: resultatNet,
       tmcv: tmcv, seuil: seuil, seuilJour: seuilJour, seuilClientsExact: seuilClientsExact, seuilClients: seuilClients,
@@ -254,10 +317,9 @@
     const tvaG = franchise ? 0 : 20;
     const g2 = num(r8.croissance_a2) / 100, g3 = num(r8.croissance_a3) / 100;
     const infl = r8.hausse_charges === undefined || r8.hausse_charges === '' ? 0.02 : num(r8.hausse_charges) / 100;
-    const emp = tableauEmprunt(f.ressources.emprunt, r8.taux_emprunt, num(r8.duree_emprunt) || 5);
-    const dureeAmort = num(r8.duree_amort) || 5;
+    const emp = f.empLignes;
     const tauxCotis = num(r8.taux_cotis);
-    const ext = ['loyer', 'energie', 'assurance', 'compta', 'comm', 'autres'];
+    const ext = ['loyer', 'energie', 'assurance', 'compta', 'comm', 'autres', 'ajoutees'];
 
     // ---- Compte de résultat sur 3 ans
     const ans = [];
@@ -276,20 +338,23 @@
       if (y === 2) caY = caY * (1 + g2);
       if (y === 3) caY = caY * (1 + g3);
       const k = Math.pow(1 + infl, y - 1);
-      const achats = caY * f.tauxVar / 100;
+      const kCa = f.CA > 0 ? caY / f.CA : 1;
+      const annexesY = f.annexes * kCa;
+      const achats = caY * f.tauxAchats / 100 + f.annexesVar * kCa;
+      const autresVar = caY * f.X.varPct / 100;
       const externes = ext.reduce(function (s, x) { return s + f.fixesSaisis[x] * k; }, 0) + (y === 1 ? f.besoins.frais : 0);
       const impots = f.fixesSaisis.impots * k;
       const salaires = salAn[y - 1];
       const remuNetY = remuAn[y - 1];
       const cotis = micro ? caY * tauxCotis / 100 : remuNetY * 12 * tauxCotis / 100;
       const remu = remuNetY * 12 + cotis;
-      const dot = y <= dureeAmort ? f.besoins.invest / dureeAmort : 0;
+      const dot = dotationAn(f, y);
       const int = emp[y - 1] ? emp[y - 1].interets : 0;
-      const rai = caY - achats - externes - impots - salaires - remu - dot - int;
+      const rai = caY + annexesY - achats - autresVar - externes - impots - salaires - remu - dot - int;
       const is = f.societe ? impotSocietes(rai) : 0;
       const net = rai - is;
-      const bfr = bfrCalc(caY, f.tauxVar, tvaV, tvaA, r8);
-      ans.push({ annee: y, ca: caY, achats: achats, externes: externes, impots: impots, salaires: salaires, remu: remu, cotis: cotis,
+      const bfr = bfrCalc(caY, f.tauxAchats, tvaV, tvaA, r8);
+      ans.push({ annee: y, ca: caY + annexesY, ventes: caY, annexes: annexesY, achats: achats, autresVar: autresVar, externes: externes, impots: impots, salaires: salaires, remu: remu, cotis: cotis,
         dotations: dot, interets: int, rai: rai, is: is, net: net, caf: net + dot, capital: emp[y - 1] ? emp[y - 1].capital : 0, bfr: bfr });
     }
 
@@ -325,9 +390,12 @@
     const a1 = ans[0];
     const shiftC = Math.round(num(r8.bfr_clients_j) / 30), shiftF = Math.round(num(r8.bfr_fourn_j) / 30);
     const venteHT = moisCoefs.map(function (c) { return f.CA * c / totC; });
-    const achatHT = venteHT.map(function (v) { return v * f.tauxVar / 100; });
-    const extTVA = (f.fixesSaisis.loyer + f.fixesSaisis.energie + f.fixesSaisis.compta + f.fixesSaisis.comm + f.fixesSaisis.autres) / 12;
-    const extSansTVA = (f.fixesSaisis.assurance + f.fixesSaisis.impots) / 12;
+    const annexeHT = moisCoefs.map(function (c) { return f.annexes * c / totC; });
+    const tvaAx = franchise ? 0 : f.X.annexesTvaTaux;
+    const achatHT = venteHT.map(function (v, i) { return v * f.tauxAchats / 100 + (f.annexes > 0 ? annexeHT[i] * f.annexesVar / f.annexes : 0); });
+    const varTvaPct = f.X.varPctTva, varSansTvaPct = f.X.varPct - f.X.varPctTva;
+    const extTVA = (f.fixesSaisis.loyer + f.fixesSaisis.energie + f.fixesSaisis.compta + f.fixesSaisis.comm + f.fixesSaisis.autres + f.X.chargesTva) / 12;
+    const extSansTVA = (f.fixesSaisis.assurance + f.fixesSaisis.impots + f.X.chargesSansTva) / 12;
     const remuMois = (num(r8.remu_net) * 12 + f.cotisations) / 12;
     const salMois = f.fixesSaisis.salaires / 12;
     const echeance = emp.length ? emp[0].annuite / 12 : 0;
@@ -335,7 +403,7 @@
     let solde = 0, creditTVA = 0, tvaAPayer = 0, rembTVA = 0, minSolde = Infinity, minMois = '';
     for (let m = 0; m < 12; m++) {
       const enc = {
-        ventes: m - shiftC >= 0 ? venteHT[m - shiftC] * (1 + tvaV / 100) : 0,
+        ventes: m - shiftC >= 0 ? venteHT[m - shiftC] * (1 + tvaV / 100) + annexeHT[m - shiftC] * (1 + tvaAx / 100) : 0,
         rembTVA: m === 2 ? rembTVA : 0,
         apports: m === 0 ? f.ressources.apport + f.ressources.honneur + f.ressources.aides : 0,
         emprunt: m === 0 ? f.ressources.emprunt : 0
@@ -347,14 +415,14 @@
       const dec = {
         invest: invHT * (1 + tvaG / 100) + (m === 0 ? f.besoins.fonds + f.besoins.non_amort : 0) + fraisHT * (1 + tvaG / 100),
         achats: (achatPaye + stockHT) * (1 + tvaA / 100),
-        externes: extTVA * (1 + tvaG / 100) + extSansTVA,
+        externes: extTVA * (1 + tvaG / 100) + extSansTVA + venteHT[m] * (varTvaPct * (1 + tvaG / 100) + varSansTvaPct) / 100,
         personnel: salMois + remuMois,
         emprunt: echeance,
         tva: tvaAPayer
       };
       // TVA du mois : collectée sur les ventes du mois, déductible sur les achats et frais du mois
-      const coll = venteHT[m] * tvaV / 100;
-      const ded = (invHT + fraisHT + extTVA) * tvaG / 100 + (achatHT[m] + stockHT) * tvaA / 100;
+      const coll = venteHT[m] * tvaV / 100 + annexeHT[m] * tvaAx / 100;
+      const ded = (invHT + fraisHT + extTVA + venteHT[m] * varTvaPct / 100) * tvaG / 100 + (achatHT[m] + stockHT) * tvaA / 100;
       let net = coll - ded - creditTVA;
       if (net < 0) { creditTVA = -net; net = 0; } else creditTVA = 0;
       // Le crédit de TVA né des investissements de départ est remboursé par l'État environ 2 mois plus tard
@@ -412,6 +480,10 @@
     const checks = [];
     function add(label, etat, detail) { checks.push({ label: label, etat: etat, detail: detail || '' }); }
 
+    const X = extrasCalc(r8);
+    const nbX = X.besoins.length + X.ressources.length + X.charges.length + X.variables.length + X.recettes.length;
+    if (nbX) add('Chaque ligne ajoutée à la main a une source', X.sansSource.length ? 'ko' : 'ok',
+      X.sansSource.length ? 'Sans source : ' + X.sansSource.join(', ') + '.' : nbX + ' ligne(s) ajoutée(s), toutes justifiées (devis, annonce, relevé…).');
     add('Le CA est le même en page 7 et en page 9', ca.caPrudent > 0 ? 'ok' : 'todo',
       ca.caPrudent > 0 ? 'Calculé une seule fois (' + fmtEur(ca.caPrudent) + ' HT) et repris automatiquement.' : 'Complétez la rubrique 6.');
     const budgetMax = num(r3.budget_max);
@@ -462,7 +534,7 @@
   }
   function pct(v, dec) { return (v * 100).toLocaleString('fr-FR', { maximumFractionDigits: dec === undefined ? 0 : dec }) + ' %'; }
 
-  const api = { num: num, annuite: annuite, caCalc: caCalc, financeCalc: financeCalc, coherence: coherence, planActionsTotal: planActionsTotal, fmtEur: fmtEur, pct: pct,
+  const api = { NAT_BESOINS: NAT_BESOINS, NAT_RESSOURCES: NAT_RESSOURCES, extrasCalc: extrasCalc, dotationAn: dotationAn, num: num, annuite: annuite, caCalc: caCalc, financeCalc: financeCalc, coherence: coherence, planActionsTotal: planActionsTotal, fmtEur: fmtEur, pct: pct,
     previsionnel: previsionnel, repriseCalc: repriseCalc, tableauEmprunt: tableauEmprunt, impotSocietes: impotSocietes, isSociete: isSociete, saisonCoefs: saisonCoefs, MOIS: MOIS, MOIS_IDS: MOIS_IDS };
   if (typeof module !== 'undefined' && module.exports) module.exports = api;
   root.Calc = api;
