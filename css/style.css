@@ -361,6 +361,19 @@ table.prof td { vertical-align: middle; }
 .rv-item h3 { display: none; }
 .tag.ok { background: var(--vert-clair); color: var(--vert); }
 
+/* ---------- Comptes élèves ---------- */
+.code-input { letter-spacing: .35em; font-size: 1.3rem; font-variant-numeric: tabular-nums; }
+.btn.danger { color: var(--rouge); border-color: var(--rouge-clair); }
+.btn.danger:hover { background: var(--rouge-clair); }
+#add-liste { width: 100%; font: inherit; }
+.etiquettes { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 10px; margin-top: 16px; }
+.etiquette { border: 1.5px dashed var(--trait); border-radius: 12px; padding: 12px 14px; background: #fff; break-inside: avoid; }
+.etiquette p { margin: 2px 0; display: flex; justify-content: space-between; gap: 8px; align-items: baseline; }
+.etiquette span { color: var(--gris); font-size: .85rem; }
+.etiquette .et-nom { font-family: var(--serif); font-weight: 700; color: var(--brun); font-size: 1.05rem; display: block; }
+.etiquette .et-site { color: var(--gris); font-size: .78rem; display: block; margin-bottom: 6px; }
+.etiquette .et-code { font-size: 1.25rem; letter-spacing: .2em; font-variant-numeric: tabular-nums; }
+
 @media print {
   #fin-sim { display: none !important; }
   @page { margin: 14mm; }
@@ -524,6 +537,9 @@ table.result.longueur { background: #fff; margin: 8px 0; }
 
 @page paysage { size: A4 landscape; margin: 8mm; }
 @media print {
+  body.print-codes .topbar, body.print-codes .sidebar, body.print-codes .no-print, body.print-codes .foot { display: none !important; }
+  body.print-codes .etiquettes { grid-template-columns: repeat(3, 1fr); gap: 0; }
+  body.print-codes .etiquette { border-radius: 0; border: 1px dashed #999; padding: 10px 12px; }
   body.print-slides .topbar, body.print-slides .sidebar, body.print-slides .no-print, body.print-slides .apercu-bar { display: none !important; }
   body.print-slides .slides-grid { display: block; }
   body.print-slides .slide-cell { page: paysage; break-after: page; }
@@ -575,3 +591,9 @@ button.lex:focus-visible { outline: 3px solid var(--bleu); outline-offset: 1px; 
 @keyframes lexflash { 0% { box-shadow: 0 0 0 4px var(--citron); } 100% { box-shadow: var(--shadow); } }
 @media (prefers-reduced-motion: reduce) { .lex-item.flash { animation: none; outline: 3px solid var(--citron); } }
 @media print { button.lex { border: 0; } .lex-pop { display: none; } }
+
+/* Copie de secours (menu élève) */
+.nav-backup { margin: 18px 10px 8px; padding: 12px; border: 1px dashed var(--trait); border-radius: 12px; display: grid; gap: 8px; }
+.nav-backup-t { margin: 0; font-size: .78rem; font-weight: 600; color: var(--gris); }
+.nav-backup .btn { width: 100%; justify-content: center; }
+@media print { .nav-backup { display: none; } }

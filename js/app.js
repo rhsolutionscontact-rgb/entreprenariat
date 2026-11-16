@@ -1081,7 +1081,7 @@
     else h += '<div class="upload"><input type="file" id="pdf-input" accept="application/pdf"><button type="button" class="btn" id="pdf-send">Déposer mon PDF</button><p class="help">PDF uniquement, ' + (cfg.TAILLE_MAX_PDF_MO || 10) + ' Mo maximum.</p></div>';
     if (S.depots.length) {
       h += '<h4>Mes dépôts</h4><ul class="depots">' + S.depots.map(function (dp, i) {
-        return '<li><span>' + (i === 0 ? '<span class="tag">version transmise</span> ' : '') + esc(dp.filename) + ' — ' + new Date(dp.created_at).toLocaleString('fr-FR') + '</span><button type="button" class="btn ghost small" data-dl="' + esc(dp.path) + '" data-fn="' + esc(dp.filename) + '">Télécharger</button></li>';
+        return '<li><span>' + (i === 0 ? '<span class="tag">version transmise</span> ' : '') + esc(dp.filename) + ' — ' + new Date(dp.created_at).toLocaleString('fr-FR') + ' · ' + Math.round((dp.size || 0) / 1024) + ' Ko</span></li>';
       }).join('') + '</ul>';
     }
     return h;
@@ -1097,8 +1097,8 @@
       '<div class="top-right">' +
         (!prof ? '<div class="global-progress" title="Avancement global"><div class="bar"><span id="global-bar"></span></div><span id="global-pct"></span></div><span class="save-status" id="save-status"></span>' : '') +
         (!prof ? '<button type="button" class="btn ghost small" id="btn-apercu">Aperçu de mon dossier</button><button type="button" class="btn ghost small" id="btn-oral-top">Kit oral</button>' : '') +
-        '<div class="user"><span>' + esc(Store.profile ? (Store.profile.prenom + ' ' + Store.profile.nom) : '') + (Store.mode === 'demo' ? ' <span class="tag">démo</span>' : '') + '</span>' +
-        (Store.mode === 'cloud' ? '<button type="button" class="btn ghost small" id="btn-logout">Déconnexion</button>' : '<button type="button" class="btn ghost small" id="btn-reset">Effacer la démo</button>') + '</div>' +
+        '<div class="user"><span>' + (Store.mode === 'demo' ? 'Mode démonstration <span class="tag">démo</span>' : esc(Store.profile ? (Store.profile.prenom + ' ' + Store.profile.nom) : '')) + '</span>' +
+        (Store.mode === 'cloud' ? '<button type="button" class="btn ghost small" id="btn-logout">Se déconnecter</button>' : '<button type="button" class="btn ghost small" id="btn-reset">Effacer la démo</button>') + '</div>' +
       '</div></header>' +
       '<div class="layout">' + (!prof ? '<nav class="sidebar" id="sidebar"></nav>' : '') + '<main id="main" tabindex="-1"></main></div>' +
       '<footer class="foot">' + esc(cfg.NOM_SITE) + ' · <a href="mentions.html">Mentions légales et données personnelles</a></footer>';
@@ -1117,7 +1117,11 @@
         '<span class="nav-txt"><span class="nav-title">' + esc(r.titre) + '</span><span class="nav-sub">' + esc(r.page) + (comp ? ' · ' + esc(comp) : '') + '</span>' +
         '<span class="nav-bar"><span style="width:' + p + '%"></span></span></span></button></li>';
     }).join('') + '</ol>' +
-      '<button type="button" class="nav-item nav-lex' + (S.view === 'lexique' ? ' active' : '') + '" data-lexique=""><span class="nav-num">?</span><span class="nav-txt"><span class="nav-title">Lexique</span><span class="nav-sub">' + LEX.length + ' notions avec leurs sources</span></span></button>';
+      '<button type="button" class="nav-item nav-lex' + (S.view === 'lexique' ? ' active' : '') + '" data-lexique=""><span class="nav-num">?</span><span class="nav-txt"><span class="nav-title">Lexique</span><span class="nav-sub">' + LEX.length + ' notions avec leurs sources</span></span></button>' +
+      '<div class="nav-backup"><p class="nav-backup-t">Copie de secours</p>' +
+      '<button type="button" class="btn ghost small" id="btn-export">Télécharger une copie</button>' +
+      '<button type="button" class="btn ghost small" id="btn-import">Reprendre depuis une copie</button>' +
+      '<input type="file" id="import-file" accept=".json,application/json" hidden></div>';
     const g = globalPct();
     const gb = $('#global-bar'), gp = $('#global-pct');
     if (gb) gb.style.width = g + '%';
@@ -1325,8 +1329,36 @@
     app.addEventListener('click', onClick);
   }
 
+  /* ---------- Copie de secours (fichier) ---------- */
+  function exporterCopie() {
+    const p = Store.profile || {};
+    const nom = [p.prenom, p.nom].filter(Boolean).join('-').toLowerCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[^a-z0-9-]+/g, '-') || 'dossier';
+    const payload = { app: 'ef3-mco', version: 1, exporte_le: new Date().toISOString(), eleve: { prenom: p.prenom || '', nom: p.nom || '' }, data: S.data };
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([JSON.stringify(payload, null, 1)], { type: 'application/json' }));
+    a.download = 'EF3-' + nom + '-' + new Date().toISOString().slice(0, 10) + '.json';
+    document.body.appendChild(a); a.click(); a.remove();
+    toast('Copie téléchargée. Gardez-la sur une clé USB ou envoyez-la-vous par e-mail.');
+  }
+  async function importerCopie(file) {
+    if (!file) return;
+    let obj;
+    try { obj = JSON.parse(await file.text()); } catch (e) { obj = null; }
+    if (!obj || obj.app !== 'ef3-mco' || typeof obj.data !== 'object' || !obj.data) { toast('Ce fichier n’est pas une copie de dossier EF3.'); return; }
+    const quand = obj.exporte_le ? new Date(obj.exporte_le).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : 'date inconnue';
+    if (!confirm('Remplacer le dossier affiché par la copie du ' + quand + ' ?\n\nPensez à télécharger d’abord une copie du dossier actuel si vous voulez le garder.')) return;
+    S.data = obj.data;
+    computeProgress();
+    S.dirty = true;
+    await saveNow();
+    renderNav();
+    go(firstIncomplete());
+    toast('Copie reprise : votre dossier est rétabli.');
+  }
+
   function onInput(e) {
     const t = e.target;
+    if (t.id === 'import-file' && e.type === 'change') { importerCopie(t.files && t.files[0]); return; }
     if (t.id === 'lex-q' && e.type === 'input') {
       const st = S.lexState || {};
       renderLexique(t.value, st.cat);
@@ -1376,8 +1408,10 @@
     if (t.hasAttribute('data-lexcat')) { renderLexique((S.lexState || {}).q, t.getAttribute('data-lexcat')); return; }
     if (t.id === 'brand') { e.preventDefault(); if (Store.profile && Store.profile.role === 'prof') renderProf(); else go(firstIncomplete()); return; }
     if (t.id === 'menu-btn') { document.body.classList.toggle('nav-open'); return; }
-    if (t.id === 'btn-logout') { await saveNow(); await Store.signOut(); location.hash = ''; boot(); return; }
+    if (t.id === 'btn-logout') { await saveNow(); await Store.signOut(); S.data = {}; S.progress = {}; location.hash = ''; boot(); return; }
     if (t.id === 'btn-reset') { if (confirm('Effacer tout le travail de démonstration enregistré dans ce navigateur ?')) { Store.resetDemo(); S.data = {}; computeProgress(); go('r0'); } return; }
+    if (t.id === 'btn-export') { await saveNow(); exporterCopie(); return; }
+    if (t.id === 'btn-import') { const f = $('#import-file'); if (f) { f.value = ''; f.click(); } return; }
     if (t.id === 'btn-apercu' || t.id === 'btn-apercu2') { await saveNow(); renderApercu(S.data, Store.profile); return; }
     if (t.id === 'btn-oral' || t.id === 'btn-oral-top') { await saveNow(); renderOral('supports'); return; }
     const g = t.getAttribute('data-goto');
@@ -1597,7 +1631,7 @@
     const main = $('#main');
     const classes = PROF.classes || [];
     let list = PROF.list.filter(function (e) {
-      return (!PROF.classe || e.classe === PROF.classe) && (!PROF.q || (e.nom + ' ' + e.prenom + ' ' + e.email).toLowerCase().indexOf(PROF.q.toLowerCase()) >= 0);
+      return (!PROF.classe || e.classe === PROF.classe) && (!PROF.q || (e.nom + ' ' + e.prenom + ' ' + e.identifiant).toLowerCase().indexOf(PROF.q.toLowerCase()) >= 0);
     });
     const nbDepots = list.filter(function (e) { return e.depots.length; }).length;
     const rows = list.map(function (e) {
@@ -1605,19 +1639,23 @@
       const g = Math.round(R.reduce(function (s, r) { return s + (prog[r.id] || 0); }, 0) / R.length);
       const squares = R.map(function (r) { const p = prog[r.id] || 0; return '<span class="sq ' + (p >= 100 ? 'full' : (p > 0 ? 'part' : '')) + '" title="Rubrique ' + r.num + ' — ' + esc(r.titre) + ' : ' + p + ' %">' + r.num + '</span>'; }).join('');
       const dep = e.depots[0];
-      return '<tr><td><strong>' + esc(e.nom.toUpperCase()) + '</strong> ' + esc(e.prenom) + '<br><span class="muted small">' + esc(e.email || '') + '</span></td><td>' + esc(e.classe || '') + '</td>' +
+      return '<tr><td><strong>' + esc(e.nom.toUpperCase()) + '</strong> ' + esc(e.prenom) + '<br><span class="muted small">' + esc(e.identifiant || '') + (e.bloque_jusqua && new Date(e.bloque_jusqua) > new Date() ? ' · <span class="lg-ko">bloqué (trop d’essais)</span>' : '') + '</span></td><td>' + esc(e.classe || '') + '</td>' +
         '<td><div class="bar small"><span style="width:' + g + '%"></span></div><span class="small">' + g + ' %</span><div class="squares">' + squares + '</div></td>' +
         '<td class="small">' + (e.dossier && e.dossier.updated_at ? new Date(e.dossier.updated_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td>' +
         '<td>' + (dep ? '<span class="small">' + new Date(dep.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) + (e.depots.length > 1 ? ' · ' + e.depots.length + ' versions' : '') + '</span><br><button type="button" class="btn small" data-dl="' + esc(dep.path) + '" data-fn="' + esc(fileName(e, dep)) + '">Télécharger le PDF</button>' : '<span class="muted small">Aucun dépôt</span>') + '</td>' +
-        '<td><button type="button" class="btn ghost small" data-voir="' + esc(e.id) + '">Voir ses réponses</button> <button type="button" class="btn ghost small" data-grille="' + esc(e.id) + '">Grille d’évaluation</button></td></tr>';
+        '<td><button type="button" class="btn ghost small" data-voir="' + esc(e.id) + '">Voir ses réponses</button> <button type="button" class="btn ghost small" data-grille="' + esc(e.id) + '">Grille d’évaluation</button> <button type="button" class="btn ghost small" data-code="' + esc(e.id) + '">Nouveau code</button> <button type="button" class="btn ghost small danger" data-suppr="' + esc(e.id) + '">Supprimer</button></td></tr>';
     }).join('');
-    main.innerHTML = '<article class="rubrique"><header class="rub-head"><span class="rub-kicker">Espace professeur</span><h1>Mes étudiants</h1><p class="objectif">' + list.length + ' étudiant(s) · ' + nbDepots + ' dossier(s) déposé(s)</p></header>' +
+    main.innerHTML = '<article class="rubrique"><header class="rub-head"><span class="rub-kicker">Espace professeur</span><h1>Mes élèves</h1><p class="objectif">' + list.length + ' élève(s) · ' + nbDepots + ' dossier(s) déposé(s)</p></header>' +
       '<section class="card"><div class="prof-tools"><select id="prof-classe"><option value="">Toutes les classes</option>' + classes.map(function (c) { return '<option' + (PROF.classe === c.code ? ' selected' : '') + ' value="' + esc(c.code) + '">' + esc(c.code + ' — ' + c.nom) + '</option>'; }).join('') + '</select>' +
-      '<input type="search" id="prof-q" placeholder="Rechercher un étudiant" value="' + esc(PROF.q) + '"><button type="button" class="btn ghost small" id="prof-csv">Exporter en tableur (CSV)</button><button type="button" class="btn ghost small" id="prof-refresh">Actualiser</button></div>' +
-      '<div class="table-wrap"><table class="result prof"><thead><tr><th>Étudiant</th><th>Classe</th><th>Avancement par rubrique</th><th>Dernière activité</th><th>Dossier déposé</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="6" class="muted">Aucun étudiant inscrit pour l’instant. Donnez-leur l’adresse du site et le code de leur classe.</td></tr>') + '</tbody></table></div></section>' +
-      '<section class="card"><h2>Codes d’inscription des classes</h2><p class="help">Un étudiant ne peut créer son compte qu’avec le code de sa classe. Fermez un code quand toute la classe est inscrite.</p>' +
-      '<table class="result"><thead><tr><th>Code</th><th>Classe</th><th>État</th><th></th></tr></thead><tbody>' + classes.map(function (c) { return '<tr><td><strong>' + esc(c.code) + '</strong></td><td>' + esc(c.nom) + '</td><td>' + (c.actif ? 'Ouvert' : 'Fermé') + '</td><td><button type="button" class="btn ghost small" data-toggle-classe="' + esc(c.code) + '" data-actif="' + (c.actif ? '0' : '1') + '">' + (c.actif ? 'Fermer' : 'Rouvrir') + '</button></td></tr>'; }).join('') + '</tbody></table>' +
-      '<div class="prof-tools"><input type="text" id="new-code" placeholder="Code (ex. MCO2-2027)"><input type="text" id="new-nom" placeholder="Nom (ex. BTS MCO 2e année)"><button type="button" class="btn small" id="add-classe">Ajouter</button></div></section></article>';
+      '<input type="search" id="prof-q" placeholder="Rechercher un élève" value="' + esc(PROF.q) + '"><button type="button" class="btn ghost small" id="prof-csv">Exporter en tableur (CSV)</button><button type="button" class="btn ghost small" id="prof-refresh">Actualiser</button></div>' +
+      '<div class="table-wrap"><table class="result prof"><thead><tr><th>Élève</th><th>Classe</th><th>Avancement par rubrique</th><th>Dernière activité</th><th>Dossier déposé</th><th></th></tr></thead><tbody>' + (rows || '<tr><td colspan="6" class="muted">Aucun élève pour l’instant : ajoutez la liste de la classe ci-dessous.</td></tr>') + '</tbody></table></div></section>' +
+      '<section class="card" id="ajout-eleves"><h2>Ajouter des élèves</h2><p class="help">Collez la liste de la classe, <strong>un élève par ligne</strong> : « Prénom Nom », « NOM Prénom » (copie depuis Pronote) ou deux colonnes copiées d’un tableur. Le site crée pour chacun un identifiant et un code personnel à 6 chiffres.</p>' +
+        (classes.length ? '<div class="prof-tools"><select id="add-classe-sel">' + classes.map(function (c) { return '<option value="' + esc(c.code) + '"' + (PROF.classe === c.code ? ' selected' : '') + '>' + esc(c.code + ' — ' + c.nom) + '</option>'; }).join('') + '</select></div>' +
+          '<textarea id="add-liste" rows="6" placeholder="Amine Benali&#10;DUPONT Léa&#10;Kaya	Jean-Pierre"></textarea><div id="add-apercu"></div>' +
+          '<div class="prof-tools"><button type="button" class="btn" id="add-creer" disabled>Créer les comptes</button></div>'
+        : '<p class="callout">Créez d’abord une classe ci-dessous.</p>') + '</section>' +
+      '<section class="card"><h2>Mes classes</h2><table class="result"><thead><tr><th>Code</th><th>Classe</th><th>Élèves</th></tr></thead><tbody>' + classes.map(function (c) { return '<tr><td><strong>' + esc(c.code) + '</strong></td><td>' + esc(c.nom) + '</td><td>' + PROF.list.filter(function (e) { return e.classe === c.code; }).length + '</td></tr>'; }).join('') + '</tbody></table>' +
+      '<div class="prof-tools"><input type="text" id="new-code" placeholder="Code court (ex. MCO2-2027)"><input type="text" id="new-nom" placeholder="Nom (ex. BTS MCO 2e année)"><button type="button" class="btn small" id="add-classe">Ajouter la classe</button></div></section></article>';
 
     $('#prof-classe').addEventListener('change', function (ev) { PROF.classe = ev.target.value; drawProf(); });
     $('#prof-q').addEventListener('input', function (ev) { PROF.q = ev.target.value; clearTimeout(PROF.t); PROF.t = setTimeout(function () { drawProf(); const q = $('#prof-q'); q.focus(); q.setSelectionRange(q.value.length, q.value.length); }, 300); });
@@ -1628,7 +1666,22 @@
       if (!code.trim() || !nom.trim()) { toast('Indiquez le code et le nom de la classe.', 'err'); return; }
       try { await Store.addClasse(code, nom); toast('Classe ajoutée.', 'ok'); renderProf(); } catch (e) { toast(e.message, 'err'); }
     });
-    $$('[data-toggle-classe]').forEach(function (b) { b.addEventListener('click', async function () { try { await Store.toggleClasse(b.getAttribute('data-toggle-classe'), b.getAttribute('data-actif') === '1'); renderProf(); } catch (e) { toast(e.message, 'err'); } }); });
+    bindAjoutEleves();
+    $$('[data-code]').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        const e = PROF.list.find(function (x) { return x.id === b.getAttribute('data-code'); });
+        if (!confirm('Créer un nouveau code pour ' + e.prenom + ' ' + e.nom + ' ? L’ancien code ne marchera plus et l’élève sera déconnecté de ses autres appareils.')) return;
+        try { const code = await Store.nouveauCode(e.id); afficherCodes([{ prenom: e.prenom, nom: e.nom, identifiant: e.identifiant, code: code, classe: e.classe }], 'Nouveau code'); }
+        catch (err) { toast(err.message, 'err'); }
+      });
+    });
+    $$('[data-suppr]').forEach(function (b) {
+      b.addEventListener('click', async function () {
+        const e = PROF.list.find(function (x) { return x.id === b.getAttribute('data-suppr'); });
+        if (!confirm('Supprimer définitivement le compte de ' + e.prenom + ' ' + e.nom + ' ? Son dossier et ses dépôts seront effacés. Cette action est irréversible.')) return;
+        try { await Store.supprimerEleve(e.id); toast('Compte supprimé.', 'ok'); renderProf(); } catch (err) { toast(err.message, 'err'); }
+      });
+    });
     $$('[data-grille]').forEach(function (b) {
       b.addEventListener('click', async function () {
         const e = PROF.list.find(function (x) { return x.id === b.getAttribute('data-grille'); });
@@ -1649,14 +1702,97 @@
     });
   }
 
+  /** Découpe une liste collée en { prenom, nom }. */
+  function parseListe(txt) {
+    const maj = function (w) { return w.length > 1 && w === w.toUpperCase() && /\p{Lu}/u.test(w); };
+    const cap = function (x) { return x.toLowerCase().replace(/(^|[\s\-'’])(\p{L})/gu, function (m, a, c) { return a + c.toUpperCase(); }); };
+    return String(txt || '').split(/\r?\n/).map(function (l) { return l.trim(); }).filter(Boolean).map(function (l) {
+      let prenom = '', nom = '';
+      const cols = l.split(/\t|;|,/).map(function (x) { return x.trim(); }).filter(Boolean);
+      if (cols.length >= 2) {
+        if (cols[0].split(/\s+/).every(maj) && !cols[1].split(/\s+/).every(maj)) { nom = cols[0]; prenom = cols[1]; }
+        else { prenom = cols[0]; nom = cols[1]; }
+      } else {
+        const w = l.split(/\s+/);
+        const up = w.filter(maj);
+        if (up.length && up.length < w.length) { nom = up.join(' '); prenom = w.filter(function (x) { return !maj(x); }).join(' '); }
+        else { prenom = w[0]; nom = w.slice(1).join(' '); }
+      }
+      return { prenom: cap(prenom), nom: cap(nom), ok: !!(prenom && nom) };
+    });
+  }
+
+  function bindAjoutEleves() {
+    const ta = $('#add-liste'); if (!ta) return;
+    const norm = function (x) { return String(x || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z]/g, ''); };
+    const lire = function () {
+      const classe = $('#add-classe-sel').value;
+      const deja = {};
+      PROF.list.forEach(function (e) { if (e.classe === classe) deja[norm(e.prenom) + '|' + norm(e.nom)] = true; });
+      const vus = {};
+      return parseListe(ta.value).map(function (x) {
+        const k = norm(x.prenom) + '|' + norm(x.nom);
+        if (x.ok && deja[k]) { x.ok = false; x.motif = 'déjà inscrit dans cette classe : ignoré'; }
+        else if (x.ok && vus[k]) { x.ok = false; x.motif = 'en double dans la liste : ignoré'; }
+        else if (!x.ok) x.motif = 'prénom ou nom manquant : ligne ignorée';
+        vus[k] = true;
+        return x;
+      });
+    };
+    const maj = function () {
+      const l = lire();
+      const ok = l.filter(function (x) { return x.ok; });
+      $('#add-creer').disabled = !ok.length;
+      $('#add-creer').textContent = ok.length ? 'Créer ' + ok.length + ' compte' + (ok.length > 1 ? 's' : '') : 'Créer les comptes';
+      $('#add-apercu').innerHTML = l.length ? '<div class="table-wrap"><table class="result"><thead><tr><th>Prénom</th><th>Nom</th><th></th></tr></thead><tbody>' + l.map(function (x) { return '<tr><td>' + esc(x.prenom) + '</td><td>' + esc(x.nom) + '</td><td>' + (x.ok ? '' : '<span class="lg-ko">' + esc(x.motif) + '</span>') + '</td></tr>'; }).join('') + '</tbody></table></div><p class="help">Vérifiez que prénoms et noms sont dans la bonne colonne avant de créer les comptes.</p>' : '';
+    };
+    ta.addEventListener('input', maj);
+    $('#add-classe-sel').addEventListener('change', maj);
+    $('#add-creer').addEventListener('click', async function () {
+      const classe = $('#add-classe-sel').value;
+      const l = lire().filter(function (x) { return x.ok; }).map(function (x) { return { prenom: x.prenom, nom: x.nom }; });
+      const btn = $('#add-creer'); btn.disabled = true; btn.textContent = 'Création…';
+      try {
+        const res = await Store.creerEleves(classe, l);
+        res.forEach(function (r) { r.classe = classe; });
+        PROF.list = await Store.listEtudiants();
+        afficherCodes(res, res.length + ' compte' + (res.length > 1 ? 's' : '') + ' créé' + (res.length > 1 ? 's' : ''));
+      } catch (err) { toast(err.message, 'err'); btn.disabled = false; }
+    });
+  }
+
+  /** Affiche les identifiants et codes, avec impression d'étiquettes et export CSV. */
+  function afficherCodes(list, titre) {
+    const main = $('#main');
+    const url = location.origin + location.pathname;
+    main.innerHTML = '<article class="rubrique codes-view"><div class="no-print"><header class="rub-head"><span class="rub-kicker">Espace professeur</span><h1>' + esc(titre) + '</h1></header>' +
+      '<div class="callout warn"><p><strong>Notez ou imprimez ces codes maintenant</strong> : ils ne seront plus affichés. En cas de perte, vous pourrez toujours en créer un nouveau.</p></div>' +
+      '<div class="oral-actions"><button type="button" class="btn" id="codes-print">Imprimer les étiquettes</button><button type="button" class="btn ghost" id="codes-csv">Télécharger la liste (CSV)</button><button type="button" class="btn ghost" id="codes-back">Retour à mes élèves</button></div></div>' +
+      '<div class="etiquettes">' + list.map(function (r) {
+        return '<div class="etiquette"><p class="et-nom">' + esc(r.prenom + ' ' + r.nom) + '</p><p class="et-site">' + esc(url.replace(/^https?:\/\//, '')) + '</p>' +
+          '<p><span>Identifiant</span><strong>' + esc(r.identifiant) + '</strong></p><p><span>Code</span><strong class="et-code">' + esc(r.code) + '</strong></p></div>';
+      }).join('') + '</div></article>';
+    $('#codes-print').addEventListener('click', function () { document.body.classList.add('print-codes'); window.print(); setTimeout(function () { document.body.classList.remove('print-codes'); }, 500); });
+    $('#codes-back').addEventListener('click', renderProf);
+    $('#codes-csv').addEventListener('click', function () {
+      const lines = [['Prénom', 'Nom', 'Classe', 'Identifiant', 'Code']].concat(list.map(function (r) { return [r.prenom, r.nom, r.classe || '', r.identifiant, r.code]; }));
+      const csv = '﻿' + lines.map(function (l) { return l.map(function (x) { return '"' + String(x).replace(/"/g, '""') + '"'; }).join(';'); }).join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+      a.download = 'codes-eleves-' + new Date().toISOString().slice(0, 10) + '.csv';
+      a.click();
+    });
+    window.scrollTo(0, 0);
+  }
+
   function fileName(e, dep) { return ('EF3_' + (e.classe || '') + '_' + e.nom + '_' + e.prenom).replace(/[^\w\-]+/g, '_') + '.pdf'; }
 
   function exportCsv(list) {
-    const head = ['Nom', 'Prénom', 'E-mail', 'Classe', 'Avancement global (%)'].concat(R.map(function (r) { return 'R' + r.num + ' ' + r.court + ' (%)'; })).concat(['Dernière activité', 'Dernier dépôt', 'Nombre de versions']);
+    const head = ['Nom', 'Prénom', 'Identifiant', 'Classe', 'Avancement global (%)'].concat(R.map(function (r) { return 'R' + r.num + ' ' + r.court + ' (%)'; })).concat(['Dernière activité', 'Dernier dépôt', 'Nombre de versions']);
     const lines = [head].concat(list.map(function (e) {
       const prog = (e.dossier && e.dossier.progress) || {};
       const g = Math.round(R.reduce(function (s, r) { return s + (prog[r.id] || 0); }, 0) / R.length);
-      return [e.nom, e.prenom, e.email, e.classe, g].concat(R.map(function (r) { return prog[r.id] || 0; })).concat([
+      return [e.nom, e.prenom, e.identifiant, e.classe, g].concat(R.map(function (r) { return prog[r.id] || 0; })).concat([
         e.dossier && e.dossier.updated_at ? new Date(e.dossier.updated_at).toLocaleString('fr-FR') : '',
         e.depots[0] ? new Date(e.depots[0].created_at).toLocaleString('fr-FR') : '', e.depots.length]);
     }));
@@ -1672,22 +1808,28 @@
     mode = mode || 'login';
     const app = $('#app');
     const t = {
-      login: '<h2>Connexion</h2><form id="f-login"><label>Adresse e-mail<input type="email" name="email" required autocomplete="email"></label><label>Mot de passe<input type="password" name="password" required autocomplete="current-password"></label><button class="btn wide">Se connecter</button></form><p class="auth-links"><a href="#" data-auth="signup">Créer mon compte</a> · <a href="#" data-auth="forgot">Mot de passe oublié ?</a></p>',
-      signup: '<h2>Créer mon compte</h2><form id="f-signup"><div class="two"><label>Prénom<input name="prenom" required autocomplete="given-name"></label><label>Nom<input name="nom" required autocomplete="family-name"></label></div><label>Adresse e-mail<input type="email" name="email" required autocomplete="email"></label><label>Mot de passe (8 caractères minimum)<input type="password" name="password" minlength="8" required autocomplete="new-password"></label><label>Code de ma classe<input name="classe" required placeholder="Donné par votre professeur" autocapitalize="characters"></label><label class="check"><input type="checkbox" required><span>J’ai lu les <a href="mentions.html" target="_blank">mentions sur mes données personnelles</a>.</span></label><button class="btn wide">Créer mon compte</button></form><p class="auth-links"><a href="#" data-auth="login">J’ai déjà un compte</a></p>',
-      forgot: '<h2>Mot de passe oublié</h2><form id="f-forgot"><label>Adresse e-mail<input type="email" name="email" required></label><button class="btn wide">Recevoir un lien</button></form><p class="auth-links"><a href="#" data-auth="login">Retour</a></p>',
+      login: '<h2>Connexion élève</h2><form id="f-login" autocomplete="off"><label>Mon identifiant<input name="identifiant" required autocapitalize="none" autocorrect="off" spellcheck="false" placeholder="prenom.nom"></label><label>Mon code à 6 chiffres<input name="code" required inputmode="numeric" pattern="[0-9 ]{6,7}" maxlength="7" autocomplete="off" class="code-input" placeholder="••••••"></label><button class="btn wide">Se connecter</button></form>' +
+        '<p class="help">Identifiant et code sont donnés par votre professeur. Code perdu ? Demandez-lui-en un nouveau.</p>' +
+        '<p class="help">Sur un ordinateur partagé, cliquez sur <strong>Se déconnecter</strong> en partant : votre travail est enregistré en ligne, pas sur l’ordinateur.</p>' +
+        '<p class="auth-links"><a href="#" data-auth="prof">Espace professeur</a></p>',
+      prof: '<h2>Espace professeur</h2><form id="f-prof"><label>Adresse e-mail<input type="email" name="email" required autocomplete="email"></label><label>Mot de passe<input type="password" name="password" required autocomplete="current-password"></label><button class="btn wide">Se connecter</button></form><p class="auth-links"><a href="#" data-auth="forgot">Mot de passe oublié</a> · <a href="#" data-auth="signup">Créer le compte professeur</a> · <a href="#" data-auth="login">Connexion élève</a></p>',
+      signup: '<h2>Créer le compte professeur</h2><form id="f-signup"><div class="two"><label>Prénom<input name="prenom" required autocomplete="given-name"></label><label>Nom<input name="nom" required autocomplete="family-name"></label></div><label>Adresse e-mail<input type="email" name="email" required autocomplete="email"></label><label>Mot de passe (8 caractères minimum)<input type="password" name="password" minlength="8" required autocomplete="new-password"></label><label>Code professeur<input name="classe" required autocapitalize="characters"></label><button class="btn wide">Créer le compte</button></form><p class="auth-links"><a href="#" data-auth="prof">Retour</a></p>',
+      forgot: '<h2>Mot de passe oublié</h2><form id="f-forgot"><label>Adresse e-mail<input type="email" name="email" required></label><button class="btn wide">Recevoir un lien</button></form><p class="auth-links"><a href="#" data-auth="prof">Retour</a></p>',
       reset: '<h2>Nouveau mot de passe</h2><form id="f-reset"><label>Nouveau mot de passe<input type="password" name="password" minlength="8" required autocomplete="new-password"></label><button class="btn wide">Enregistrer</button></form>'
     };
     app.innerHTML = '<div class="auth"><div class="auth-card"><div class="auth-brand"><span class="logo">EF3</span><div><strong>' + esc(cfg.NOM_SITE) + '</strong><br><span class="muted">' + esc(cfg.ETABLISSEMENT) + '</span></div></div>' +
-      '<p class="auth-intro">Construisez votre dossier d’entrepreneuriat page par page, suivez votre avancement et déposez votre dossier final.</p>' + t[mode] + '<p class="auth-msg" id="auth-msg" role="alert"></p></div><p class="foot"><a href="mentions.html">Mentions légales et données personnelles</a></p></div>';
+      (mode === 'login' ? '<p class="auth-intro">Construisez votre dossier d’entrepreneuriat page par page. Votre travail est enregistré automatiquement : vous le retrouvez sur n’importe quel ordinateur ou téléphone.</p>' : '') + t[mode] + '<p class="auth-msg" id="auth-msg" role="alert"></p></div><p class="foot"><a href="mentions.html">Mentions légales et données personnelles</a></p></div>';
     $$('[data-auth]').forEach(function (a) { a.addEventListener('click', function (e) { e.preventDefault(); renderAuth(a.getAttribute('data-auth')); }); });
     const msg = function (m, ok) { const el = $('#auth-msg'); el.textContent = m; el.className = 'auth-msg ' + (ok ? 'ok' : 'err'); };
     const form = $('form', app);
+    const first = $('input', form); if (first) first.focus();
     form.addEventListener('submit', async function (e) {
       e.preventDefault();
       const fd = new FormData(form);
       const btn = $('button', form); btn.disabled = true;
       try {
-        if (mode === 'login') { await Store.signIn(fd.get('email'), fd.get('password')); boot(); }
+        if (mode === 'login') { await Store.signInEleve(fd.get('identifiant'), fd.get('code')); boot(); }
+        else if (mode === 'prof') { await Store.signIn(fd.get('email'), fd.get('password')); boot(); }
         else if (mode === 'signup') {
           const res = await Store.signUp({ email: fd.get('email'), password: fd.get('password'), nom: fd.get('nom'), prenom: fd.get('prenom'), classe: fd.get('classe') });
           if (res.session) boot(); else msg('Compte créé. Ouvrez le lien reçu par e-mail pour confirmer votre adresse, puis connectez-vous.', true);
@@ -1702,12 +1844,13 @@
   async function boot() {
     const app = $('#app');
     app.innerHTML = '<div class="loading">Chargement…</div>';
-    try { if (!Store.mode || !Store.user) await Store.init(); }
+    try { if (Store.mode !== 'cloud' || !Store.user) await Store.init(); }
     catch (e) { app.innerHTML = '<div class="auth"><div class="auth-card"><p class="auth-msg err">' + esc(e.message) + '</p></div></div>'; return; }
     Store.onRecovery(function () { renderAuth('reset'); });
     if (location.hash === '#nouveau-mot-de-passe' && Store.user) { renderAuth('reset'); return; }
+    Store.onExpired = function () { toast('Votre session a expiré : reconnectez-vous.', 'err'); setTimeout(function () { renderAuth('login'); }, 800); };
     if (Store.mode === 'cloud' && !Store.user) { renderAuth('login'); return; }
-    if (Store.profile && Store.profile.role === 'prof') { renderShell(); renderProf(); return; }
+    if (Store.isProf()) { renderShell(); renderProf(); return; }
     const dos = await Store.loadDossier();
     S.data = dos.data || {};
     computeProgress();
