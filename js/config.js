@@ -9,8 +9,8 @@
    dans le navigateur, sans comptes ni dépôt de PDF.
    ============================================================ */
 window.APP_CONFIG = {
-  SUPABASE_URL: '',
-  SUPABASE_ANON_KEY: '',
+  SUPABASE_URL: 'https://uzdfongtuzjlthbeprdf.supabase.co',
+  SUPABASE_ANON_KEY: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InV6ZGZvbmd0dXpqbHRoYmVwcmRmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3OTQ4NDI0NzIsImV4cCI6MjExMDQxODQ3Mn0.If-AbSoAd-toAhG_JPE729lfXs5TzGQtb65_Dg2H7Q8',
 
   // Nom affiché en haut du site
   NOM_SITE: 'Entrepreneuriat BTS MCO',
