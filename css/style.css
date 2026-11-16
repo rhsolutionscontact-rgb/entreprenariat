@@ -597,3 +597,10 @@ button.lex:focus-visible { outline: 3px solid var(--bleu); outline-offset: 1px; 
 .nav-backup-t { margin: 0; font-size: .78rem; font-weight: 600; color: var(--gris); }
 .nav-backup .btn { width: 100%; justify-content: center; }
 @media print { .nav-backup { display: none; } }
+
+/* Aperçu de la version élève par le professeur */
+.apercu-band { background: var(--citron); color: var(--brun); padding: 8px 16px; font-size: .9rem; font-weight: 600; display: flex; flex-wrap: wrap; gap: 8px 16px; align-items: center; justify-content: center; }
+.apercu-band .btn { white-space: nowrap; }
+@media print { .apercu-band { display: none; } }
+.topbar #btn-vue-eleve { background: var(--citron); color: var(--brun); border-color: var(--citron); }
+.topbar #btn-vue-eleve:hover { filter: brightness(.95); }

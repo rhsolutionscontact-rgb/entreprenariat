@@ -198,7 +198,7 @@
   function setSaveStatus(st, msg) {
     const el = $('#save-status');
     if (!el) return;
-    const t = { pending: 'Modifications en cours…', saving: 'Enregistrement…', saved: Store.mode === 'demo' ? 'Enregistré dans ce navigateur' : 'Enregistré', error: 'Non enregistré — nouvel essai…' };
+    const t = { pending: 'Modifications en cours…', saving: 'Enregistrement…', saved: (Store.mode === 'demo' || Store.apercu) ? 'Enregistré dans ce navigateur' : 'Enregistré', error: 'Non enregistré — nouvel essai…' };
     el.textContent = t[st] || '';
     el.className = 'save-status ' + st;
     if (msg) el.title = msg;
@@ -1071,6 +1071,7 @@
   }
   function depotHtml() {
     let h = '<h3 class="form-heading">Déposer mon dossier (PDF)</h3>';
+    if (Store.apercu) return h + '<div class="callout">Aperçu professeur : ici, l’élève choisit son PDF et clique sur « Déposer ». Le dépôt est désactivé dans l’aperçu.</div>';
     if (Store.mode === 'demo') return h + '<div class="callout">Le dépôt sera disponible quand le site sera relié à la base de données (comptes étudiants). En attendant, préparez votre dossier avec le bouton « Aperçu de mon dossier ».</div>';
     const deadline = cfg.DATE_LIMITE_DEPOT ? new Date(cfg.DATE_LIMITE_DEPOT + 'T23:59:59') : null;
     if (deadline) h += '<p class="help">Date limite : <strong>' + deadline.toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' }) + '</strong> à 23 h 59. Vous pouvez déposer une nouvelle version jusque-là ; votre professeur voit la plus récente.</p>';
@@ -1090,14 +1091,16 @@
   /* ================= Rendu des vues ================= */
   function renderShell() {
     const app = $('#app');
-    const prof = Store.profile && Store.profile.role === 'prof';
-    app.innerHTML =
+    const prof = Store.isProf() && !Store.apercu;
+    const apercu = Store.isProf() && Store.apercu;
+    app.innerHTML = (apercu ? '<div class="apercu-band">Version élève (aperçu professeur) : ce que vous saisissez ici reste sur cet ordinateur et n’est visible par personne. <button type="button" class="btn small" id="btn-prof-retour">Retour à l’espace professeur</button></div>' : '') +
       '<header class="topbar"><button type="button" class="menu-btn" id="menu-btn" aria-label="Menu">☰</button>' +
       '<a class="brand" href="#" id="brand"><span class="logo">EF3</span><span class="brand-txt"><strong>' + esc(cfg.NOM_SITE) + '</strong><span>' + esc(cfg.ETABLISSEMENT) + '</span></span></a>' +
       '<div class="top-right">' +
         (!prof ? '<div class="global-progress" title="Avancement global"><div class="bar"><span id="global-bar"></span></div><span id="global-pct"></span></div><span class="save-status" id="save-status"></span>' : '') +
         (!prof ? '<button type="button" class="btn ghost small" id="btn-apercu">Aperçu de mon dossier</button><button type="button" class="btn ghost small" id="btn-oral-top">Kit oral</button>' : '') +
         '<div class="user"><span>' + (Store.mode === 'demo' ? 'Mode démonstration <span class="tag">démo</span>' : esc(Store.profile ? (Store.profile.prenom + ' ' + Store.profile.nom) : '')) + '</span>' +
+        (prof ? '<button type="button" class="btn small" id="btn-vue-eleve">Version élève</button>' : '') +
         (Store.mode === 'cloud' ? '<button type="button" class="btn ghost small" id="btn-logout">Se déconnecter</button>' : '<button type="button" class="btn ghost small" id="btn-reset">Effacer la démo</button>') + '</div>' +
       '</div></header>' +
       '<div class="layout">' + (!prof ? '<nav class="sidebar" id="sidebar"></nav>' : '') + '<main id="main" tabindex="-1"></main></div>' +
@@ -1406,10 +1409,12 @@
     if (t.hasAttribute('data-lex')) { e.preventDefault(); lexOpen(t); return; }
     if (t.hasAttribute('data-lexique')) { const id = t.getAttribute('data-lexique'); renderLexique('', ''); if (id) { const a = document.getElementById('lex-' + id); if (a) { a.scrollIntoView({ block: 'center' }); a.classList.add('flash'); } } else window.scrollTo(0, 0); return; }
     if (t.hasAttribute('data-lexcat')) { renderLexique((S.lexState || {}).q, t.getAttribute('data-lexcat')); return; }
-    if (t.id === 'brand') { e.preventDefault(); if (Store.profile && Store.profile.role === 'prof') renderProf(); else go(firstIncomplete()); return; }
+    if (t.id === 'brand') { e.preventDefault(); if (Store.isProf() && !Store.apercu) renderProf(); else go(firstIncomplete()); return; }
     if (t.id === 'menu-btn') { document.body.classList.toggle('nav-open'); return; }
     if (t.id === 'btn-logout') { await saveNow(); await Store.signOut(); S.data = {}; S.progress = {}; location.hash = ''; boot(); return; }
     if (t.id === 'btn-reset') { if (confirm('Effacer tout le travail de démonstration enregistré dans ce navigateur ?')) { Store.resetDemo(); S.data = {}; computeProgress(); go('r0'); } return; }
+    if (t.id === 'btn-vue-eleve') { Store.setApercu(true); S.readOnly = false; location.hash = ''; boot(); return; }
+    if (t.id === 'btn-prof-retour') { await saveNow(); Store.setApercu(false); location.hash = ''; boot(); return; }
     if (t.id === 'btn-export') { await saveNow(); exporterCopie(); return; }
     if (t.id === 'btn-import') { const f = $('#import-file'); if (f) { f.value = ''; f.click(); } return; }
     if (t.id === 'btn-apercu' || t.id === 'btn-apercu2') { await saveNow(); renderApercu(S.data, Store.profile); return; }
@@ -1850,7 +1855,7 @@
     if (location.hash === '#nouveau-mot-de-passe' && Store.user) { renderAuth('reset'); return; }
     Store.onExpired = function () { toast('Votre session a expiré : reconnectez-vous.', 'err'); setTimeout(function () { renderAuth('login'); }, 800); };
     if (Store.mode === 'cloud' && !Store.user) { renderAuth('login'); return; }
-    if (Store.isProf()) { renderShell(); renderProf(); return; }
+    if (Store.isProf() && !Store.apercu) { renderShell(); renderProf(); return; }
     const dos = await Store.loadDossier();
     S.data = dos.data || {};
     computeProgress();

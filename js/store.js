@@ -10,6 +10,7 @@
   const cfg = window.APP_CONFIG || {};
   const LS_KEY = 'efp_dossier_demo_v1';
   const TOKEN_KEY = 'efp_eleve_token';
+  const APERCU_KEY = 'efp_dossier_apercu_prof';
   let sb = null;
 
   function lsGet(k) { try { return localStorage.getItem(k); } catch (e) { return null; } }
@@ -23,7 +24,12 @@
     token: null,          // jeton de session de l'élève
     onExpired: null,      // appelé si la session élève expire
 
+    apercu: false,        // professeur qui regarde la version élève
     isEleve: function () { return this.mode === 'cloud' && !!this.token; },
+    setApercu: function (on) {
+      this.apercu = !!on;
+      try { if (on) sessionStorage.setItem('efp_apercu', '1'); else sessionStorage.removeItem('efp_apercu'); } catch (e) { /* navigation privée */ }
+    },
     isProf: function () { return !!(this.profile && this.profile.role === 'prof'); },
 
     init: async function () {
@@ -43,6 +49,7 @@
         if (data && data.session) {
           this.user = data.session.user;
           await this.loadProfile();
+          try { this.apercu = sessionStorage.getItem('efp_apercu') === '1'; } catch (e) { this.apercu = false; }
         }
       } else {
         this.mode = 'demo';
@@ -108,7 +115,7 @@
     signOut: async function () {
       if (this.token && sb) { try { await sb.rpc('eleve_deconnexion', { p_token: this.token }); } catch (e) { /* hors ligne */ } }
       lsDel(TOKEN_KEY); lsDel('efp_current');
-      this.token = null;
+      this.token = null; this.setApercu(false);
       if (sb) { try { await sb.auth.signOut(); } catch (e) { /* déjà déconnecté */ } }
       this.user = null; this.profile = null;
     },
@@ -122,8 +129,8 @@
 
     /* ---------- Dossier ---------- */
     loadDossier: async function (eleveId) {
-      if (this.mode === 'demo') {
-        try { return JSON.parse(lsGet(LS_KEY)) || { data: {}, progress: {} }; }
+      if (this.mode === 'demo' || (this.apercu && !eleveId)) {
+        try { return JSON.parse(lsGet(this.apercu ? APERCU_KEY : LS_KEY)) || { data: {}, progress: {} }; }
         catch (e) { return { data: {}, progress: {} }; }
       }
       if (this.isEleve() && !eleveId) {
@@ -137,8 +144,8 @@
     },
 
     saveDossier: async function (dossierData, progress) {
-      if (this.mode === 'demo') {
-        lsSet(LS_KEY, JSON.stringify({ data: dossierData, progress: progress, updated_at: new Date().toISOString() }));
+      if (this.mode === 'demo' || this.apercu) {
+        lsSet(this.apercu ? APERCU_KEY : LS_KEY, JSON.stringify({ data: dossierData, progress: progress, updated_at: new Date().toISOString() }));
         return;
       }
       if (!this.isEleve()) return;
