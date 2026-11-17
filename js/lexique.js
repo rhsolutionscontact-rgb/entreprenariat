@@ -234,7 +234,17 @@
     { id: 'partenaires', terme: 'Partenaires', cat: 'Marketing et management', mots: ['partenaires', 'fournisseurs'],
       def: 'Acteurs extérieurs dont le projet dépend : fournisseurs, banque, comptable, assureur, réseau d’accompagnement, mairie… Le jury attend des contacts réels et des devis, pas une liste générique.' },
     { id: 'kpi', terme: 'Indicateur de suivi', cat: 'Marketing et management', mots: ['indicateur', 'indicateurs', 'tableau de bord'],
-      def: 'Chiffre suivi régulièrement pour savoir si l’entreprise est sur la bonne trajectoire : clients par jour, panier moyen, marge, trésorerie. On fixe pour chacun un objectif et un seuil d’alerte.', lien: L.bpiInd }
+      def: 'Chiffre suivi régulièrement pour savoir si l’entreprise est sur la bonne trajectoire : clients par jour, panier moyen, marge, trésorerie. On fixe pour chacun un objectif et un seuil d’alerte.', lien: L.bpiInd },
+    { id: 'ebe', terme: 'Excédent brut d’exploitation (EBE)', cat: 'Gestion et finance', mots: ['EBE', 'excédent brut d’exploitation', 'EBE retraité'],
+      def: 'Ce que l’activité rapporte avant les amortissements, les intérêts et l’impôt. C’est l’indicateur clé d’une reprise : on le « retraite » en y rajoutant la rémunération du cédant et en retirant celle dont le repreneur a besoin.', ex: 'EBE de 32 000 € + 24 000 € versés au cédant − 22 600 € pour le repreneur = 33 400 € d’EBE retraité.', lien: L.bpiInd },
+    { id: 'droit-bail', terme: 'Droit au bail', cat: 'Droit et local', mots: ['droit au bail', 'pas-de-porte', 'droit d’entrée'],
+      def: 'Somme payée à l’ancien locataire pour reprendre son bail commercial (droit au bail), ou au propriétaire à l’entrée dans les lieux (pas-de-porte ou droit d’entrée). Elle fait partie des investissements du plan de financement.', lien: { url: SP + 'F22556', label: 'Service-Public : le bail commercial' } },
+    { id: 'credit-vendeur', terme: 'Crédit vendeur', cat: 'Financement', mots: ['crédit vendeur', 'crédit-vendeur'],
+      def: 'Le cédant accepte d’être payé en partie plus tard, en plusieurs fois. Cela réduit le prêt bancaire et montre à la banque que le vendeur croit en son affaire.' },
+    { id: 'gap', terme: 'Garantie d’actif et de passif', cat: 'Droit et local', mots: ['garantie d’actif et de passif', 'garantie de passif'],
+      def: 'Engagement du vendeur de parts ou d’actions : si une dette ou un litige antérieur à la vente apparaît après coup, il en supporte le coût. Indispensable quand on rachète une société plutôt qu’un fonds.' },
+    { id: 'persona', terme: 'Persona', cat: 'Marketing et management', mots: ['persona', 'client type'],
+      def: 'Portrait d’un client imaginaire mais réaliste, construit à partir de l’étude de marché : âge, habitudes, attentes, freins, canaux d’information. Il aide à choisir ses messages et ses canaux de communication.' }
   ];
 
   /* Sources complémentaires (vérifiées en novembre 2026) */

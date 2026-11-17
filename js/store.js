@@ -181,6 +181,27 @@
       if (error) throw this.erreurEleve(error);
     },
 
+    /* ---------- Photos ----------
+       En ligne : bucket « photos » non listable, chemin imprévisible (clé de dépôt + identifiant aléatoire).
+       En démonstration ou en aperçu professeur : image réduite gardée dans le navigateur. */
+    uploadPhoto: async function (blob) {
+      if (this.mode === 'demo' || this.apercu || !this.isEleve()) {
+        return await new Promise(function (resolve, reject) { const fr = new FileReader(); fr.onload = function () { resolve(fr.result); }; fr.onerror = function () { reject(new Error('Image illisible.')); }; fr.readAsDataURL(blob); });
+      }
+      const id = (window.crypto && crypto.randomUUID) ? crypto.randomUUID() : String(Date.now()) + Math.random().toString(16).slice(2);
+      const path = this.profile.cle_depot + '/' + id + '.jpg';
+      const up = await sb.storage.from('photos').upload(path, blob, { contentType: 'image/jpeg', upsert: false });
+      if (up.error) throw traduire(up.error);
+      return path;
+    },
+
+    photoSrc: function (path) {
+      if (!path) return '';
+      if (/^data:/.test(path)) return path;
+      if (!sb) return '';
+      return sb.storage.from('photos').getPublicUrl(path).data.publicUrl;
+    },
+
     pdfUrl: async function (path, filename) {
       const { data, error } = await sb.storage.from('depots').createSignedUrl(path, 600, { download: filename || true });
       if (error) throw traduire(error);
@@ -243,7 +264,7 @@
       [/RESERVE_AU_PROF/i, 'Action réservée au professeur.'],
       [/duplicate key.*classes/i, 'Cette classe existe déjà.'],
       [/rate limit/i, 'Trop de tentatives. Patientez quelques minutes.'],
-      [/mime type|invalid_mime/i, 'Seuls les fichiers PDF sont acceptés.'],
+      [/mime type|invalid_mime/i, 'Format de fichier refusé.'],
       [/Payload too large|exceeded the maximum/i, 'Fichier trop lourd.'],
       [/Failed to fetch|NetworkError|Load failed/i, 'Connexion impossible. Vérifiez votre accès à Internet.']
     ];

@@ -5,6 +5,9 @@
   'use strict';
   const cfg = window.APP_CONFIG || {};
   const R = window.RUBRIQUES;
+  const P2 = window.RUBRIQUES_PLUS || [];
+  const ALL = R.concat(P2);
+  const PC = window.PLUS || { render: {} };
   const C = window.Calc;
   const $ = function (s, el) { return (el || document).querySelector(s); };
   const $$ = function (s, el) { return Array.prototype.slice.call((el || document).querySelectorAll(s)); };
@@ -27,7 +30,9 @@
   function eur(v, d) { return C.fmtEur(v, d); }
   function pct(v, d) { return C.pct(v, d); }
   function filled(v) { return !(v === undefined || v === null || String(v).trim() === ''); }
-  function rub(id) { return R.find(function (r) { return r.id === id; }); }
+  function rub(id) { return ALL.find(function (r) { return r.id === id; }); }
+  function listOf(r) { return r && r.partie === 2 ? P2 : R; }
+  function kicker(r) { return r.partie === 2 ? 'Module ' + r.num : 'Rubrique ' + r.num; }
   function rd(rid) { return S.data[rid] || (S.data[rid] = {}); }
   function toast(msg, kind) {
     const t = document.createElement('div');
@@ -57,6 +62,7 @@
   function shown(r, f) {
     if (!f.showIf) return true;
     const src = f.showIf.rub ? rd(f.showIf.rub) : rd(r.id);
+    if (f.showIf.notEquals !== undefined) return src[f.showIf.field] !== f.showIf.notEquals;
     return src[f.showIf.field] === f.showIf.equals;
   }
 
@@ -67,7 +73,10 @@
     return f.cols.filter(function (c) { return !c.opt; }).every(function (c) { return filled(row[c.id]); });
   }
 
+  /** Module facultatif pour ce projet (ex. reprise alors que l'élève crée) ? */
+  function nonConcerne(r) { return !!(r.optionalUnless && rd(r.optionalUnless.rub)[r.optionalUnless.field] !== r.optionalUnless.equals); }
   function requirements(r) {
+    if (nonConcerne(r)) return [];
     const d = rd(r.id);
     const items = [];
     r.fields.forEach(function (f) {
@@ -148,7 +157,7 @@
 
   function computeProgress() {
     const p = {};
-    R.forEach(function (r) { p[r.id] = Math.round(completion(r).pct * 100); });
+    ALL.forEach(function (r) { p[r.id] = r.partie === 2 && nonConcerne(r) ? -1 : Math.round(completion(r).pct * 100); });
     S.progress = p;
     return p;
   }
@@ -158,8 +167,16 @@
     return Math.round(vals.reduce(function (a, b) { return a + b; }, 0) / vals.length);
   }
 
+  /** Avancement de la deuxième partie (modules non concernés exclus). */
+  function plusPct(prog) {
+    prog = prog || S.progress;
+    const mods = P2.filter(function (r) { return prog[r.id] !== -1; });
+    if (!mods.length) return 0;
+    return Math.round(mods.reduce(function (s, r) { return s + (prog[r.id] || 0); }, 0) / mods.length);
+  }
   function isUnlocked(rid) {
     if (!cfg.PROGRESSION_GUIDEE || S.readOnly) return true;
+    if (P2.some(function (r) { return r.id === rid; })) return true;
     const idx = R.findIndex(function (r) { return r.id === rid; });
     for (let i = 0; i < idx; i++) if ((S.progress[R[i].id] || 0) < 100) return false;
     return true;
@@ -215,9 +232,11 @@
     switch (f.type) {
       case 'heading':
         return '<h3 class="form-heading">' + esc(f.label) + '</h3>';
+      case 'info': return '<div class="info-box">' + f.html + '</div>';
+      case 'calc': return '<div class="calc-box" data-calc="' + f.fn + '">' + calcHtml(f.fn) + '</div>';
       case 'text':
         return '<div class="field' + (f.inline ? ' inline' : '') + '"><label>' + esc(f.label) + req + '</label>' + help +
-          '<input type="text" data-path="' + pathAttr(p) + '" value="' + esc(d[f.id]) + '" placeholder="' + esc(f.ph || '') + '"' + ro + '></div>';
+          '<input type="' + (f.inputType || 'text') + '" data-path="' + pathAttr(p) + '" value="' + esc(d[f.id]) + '" placeholder="' + esc(f.ph || '') + '"' + ro + '></div>';
       case 'number':
         return '<div class="field' + (f.inline ? ' inline' : '') + '"><label>' + esc(f.label) + req + '</label>' + help +
           '<input type="number" inputmode="decimal" data-path="' + pathAttr(p) + '" value="' + esc(d[f.id]) + '"' + (f.step ? ' step="' + f.step + '"' : '') + (f.min !== undefined ? ' min="' + f.min + '"' : '') + ro + '></div>';
@@ -1120,6 +1139,14 @@
         '<span class="nav-txt"><span class="nav-title">' + esc(r.titre) + '</span><span class="nav-sub">' + esc(r.page) + (comp ? ' · ' + esc(comp) : '') + '</span>' +
         '<span class="nav-bar"><span style="width:' + p + '%"></span></span></span></button></li>';
     }).join('') + '</ol>' +
+      (P2.length ? '<div class="nav-part"><p class="nav-part-t">Aller plus loin</p><p class="nav-part-s">De l’idée à l’ouverture · facultatif · ' + plusPct() + ' %</p></div><ol class="nav-p2">' + P2.map(function (r) {
+        const p = S.progress[r.id] || 0;
+        const nc = p === -1;
+        return '<li><button type="button" class="nav-item' + (S.current === r.id && S.view === 'rubrique' ? ' active' : '') + (p >= 100 ? ' done' : '') + (nc ? ' nc' : '') + '" data-goto="' + r.id + '">' +
+          '<span class="nav-num">' + (p >= 100 ? '✓' : r.num) + '</span>' +
+          '<span class="nav-txt"><span class="nav-title">' + esc(r.titre) + '</span><span class="nav-sub">' + (nc ? 'Facultatif pour une création' : esc(r.page)) + '</span>' +
+          '<span class="nav-bar"><span style="width:' + (nc ? 0 : p) + '%"></span></span></span></button></li>';
+      }).join('') + '</ol>' : '') +
       '<button type="button" class="nav-item nav-lex' + (S.view === 'lexique' ? ' active' : '') + '" data-lexique=""><span class="nav-num">?</span><span class="nav-txt"><span class="nav-title">Lexique</span><span class="nav-sub">' + LEX.length + ' notions avec leurs sources</span></span></button>' +
       '<div class="nav-backup"><p class="nav-backup-t">Copie de secours</p>' +
       '<button type="button" class="btn ghost small" id="btn-export">Télécharger une copie</button>' +
@@ -1134,7 +1161,8 @@
   function renderRubrique() {
     const r = rub(S.current);
     const main = $('#main');
-    const idx = R.indexOf(r);
+    const L = listOf(r);
+    const idx = L.indexOf(r);
     if (!isUnlocked(r.id)) {
       const prev = R.slice(0, idx).find(function (x) { return (S.progress[x.id] || 0) < 100; });
       main.innerHTML = '<section class="card locked-card"><h1>🔒 ' + esc(r.titre) + '</h1><p>Cette rubrique s’ouvrira quand la rubrique <strong>' + prev.num + ' — ' + esc(prev.titre) + '</strong> sera complète. On avance page par page, comme le dossier.</p><button type="button" class="btn" data-goto="' + prev.id + '">Reprendre la rubrique ' + prev.num + '</button></section>';
@@ -1142,7 +1170,7 @@
     }
     const comps = r.comp.map(function (code) { const c = window.COMPETENCES.find(function (x) { return x.code === code; }); return '<span class="comp" title="' + esc(c.critere) + '">' + code + ' · ' + esc(c.titre) + '</span>'; }).join('') + (r.compLabel ? '<span class="comp alt">' + esc(r.compLabel) + '</span>' : '');
     let h = '<article class="rubrique">' +
-      '<header class="rub-head"><span class="rub-kicker">Rubrique ' + r.num + ' · ' + esc(r.page) + '</span><h1>' + esc(r.titre) + '</h1><div class="comps">' + comps + '</div><p class="objectif">' + esc(r.objectif) + '</p></header>';
+      '<header class="rub-head"><span class="rub-kicker">' + (r.partie === 2 ? 'Aller plus loin · ' : '') + kicker(r) + ' · ' + esc(r.page) + '</span><h1>' + esc(r.titre) + '</h1><div class="comps">' + comps + '</div><p class="objectif">' + esc(r.objectif) + '</p></header>';
 
     if (r.intro) h += '<section class="card"><ul class="intro">' + r.intro.map(function (i) { return '<li>' + i + '</li>'; }).join('') + '</ul></section>';
     if (r.showCompetences) h += '<section class="card"><h2>Les 6 compétences évaluées</h2><div class="table-wrap"><table class="result"><thead><tr><th>Code</th><th>Compétence</th><th>Critère officiel</th><th>Rubrique</th></tr></thead><tbody>' +
@@ -1150,23 +1178,26 @@
       '</tbody></table></div><p class="help">Chaque compétence est notée sur 4 niveaux : non maîtrisé, maîtrise partielle, bonne maîtrise, excellente maîtrise.</p></section>';
     if (r.regles) h += '<section class="card"><h2>Les 5 règles d’or</h2><ol>' + r.regles.map(function (x) { return '<li>' + esc(x) + '</li>'; }).join('') + '</ol></section>';
 
-    if (r.jury && r.jury.length) h += details('Ce que le jury va vous demander', '<ul>' + r.jury.map(function (j) { return '<li>' + esc(j) + '</li>'; }).join('') + '</ul>', true, 'jury');
+    if (r.jury && r.jury.length) h += details(r.juryTitre || 'Ce que le jury va vous demander', '<ul>' + r.jury.map(function (j) { return '<li>' + esc(j) + '</li>'; }).join('') + '</ul>', true, 'jury');
     if (r.kawa) h += details('L’exemple de KAWA.', r.kawa, r.num === 0, 'kawa');
 
-    h += '<section class="card form"><h2>' + (r.num === 0 ? 'Pour démarrer' : 'À vous : ma page de dossier') + '</h2>' +
+    h += '<section class="card form"><h2>' + (r.num === 0 ? 'Pour démarrer' : (r.partie === 2 ? 'À vous' : 'À vous : ma page de dossier')) + '</h2>' +
       r.fields.map(function (f) { return fieldHtml(r, f); }).join('') + '</section>';
 
     if (r.pieges && r.pieges.length) h += details('Les pièges à éviter', '<ul>' + r.pieges.map(function (p) { return '<li>' + p + '</li>'; }).join('') + '</ul>', false, 'pieges');
 
+    h += photosSection(r);
     h += '<section class="card status" id="rub-status"></section>';
-    h += '<nav class="pager">' + (idx > 0 ? '<button type="button" class="btn ghost" data-goto="' + R[idx - 1].id + '">← ' + esc(R[idx - 1].court) + '</button>' : '<span></span>') +
-      (idx < R.length - 1 ? '<button type="button" class="btn" id="btn-next" data-goto="' + R[idx + 1].id + '">' + esc(R[idx + 1].court) + ' →</button>' : '<button type="button" class="btn" id="btn-apercu2">Aperçu de mon dossier</button>') + '</nav></article>';
+    if (r.id === 'r9' && P2.length) h += '<section class="card next-part"><h2>Et après l’épreuve ?</h2><p>La partie <strong>« Aller plus loin »</strong> vous accompagne de l’idée à l’ouverture réelle : profil, reprise, marque, statut, local et formalités, rétroplanning, clients et réseaux, tableau de bord, dossier banquier. Elle est facultative et ne change rien à votre dossier EF3.</p><button type="button" class="btn ghost" data-goto="' + P2[0].id + '">Commencer « Aller plus loin »</button></section>';
+    h += '<nav class="pager">' + (idx > 0 ? '<button type="button" class="btn ghost" data-goto="' + L[idx - 1].id + '">← ' + esc(L[idx - 1].court) + '</button>' : (r.partie === 2 ? '<button type="button" class="btn ghost" data-goto="r9">← Dossier EF3</button>' : '<span></span>')) +
+      (idx < L.length - 1 ? '<button type="button" class="btn" id="btn-next" data-goto="' + L[idx + 1].id + '">' + esc(L[idx + 1].court) + ' →</button>' : (r.partie === 2 ? '<button type="button" class="btn" id="btn-banquier2">Mon dossier banquier</button>' : '<button type="button" class="btn" id="btn-apercu2">Aperçu de mon dossier</button>')) + '</nav></article>';
 
     main.innerHTML = h;
     typo(main);
     S.lexUsed = lexify(main, {});
     refreshStatus();
     if (r.id === 'r8') refreshFinanceTotals();
+    loadPhotoThumbs();
   }
 
 
@@ -1303,9 +1334,11 @@
     const next = $('#btn-next');
     const nextLocked = cfg.PROGRESSION_GUIDEE && p < 100;
     if (next) { next.disabled = nextLocked; next.title = nextLocked ? 'Complétez cette rubrique pour avancer' : ''; }
-    el.innerHTML = '<div class="status-head"><strong>' + (p >= 100 ? 'Rubrique complète ✓' : 'Rubrique complète à ' + p + ' %') + '</strong><div class="bar"><span style="width:' + p + '%"></span></div></div>' +
+    const mot = r.partie === 2 ? 'Module complet' : 'Rubrique complète';
+    if (r.partie === 2 && nonConcerne(r)) { el.innerHTML = '<p class="muted">Module facultatif pour votre projet : il ne compte pas dans votre avancement.</p>'; return; }
+    el.innerHTML = '<div class="status-head"><strong>' + (p >= 100 ? mot + ' ✓' : mot + ' à ' + p + ' %') + '</strong><div class="bar"><span style="width:' + p + '%"></span></div></div>' +
       (pagesOf(r) && /Page/.test(r.page) ? (function () { const n = rubWords(r), b = pagesOf(r) * MOTS_PAR_PAGE; return '<p class="small ' + (n > b * 1.3 ? 'lg-ko' : (n > b ? 'lg-mid' : 'muted')) + '">Longueur : ' + n + ' mots rédigés, pour ' + esc(r.page.toLowerCase()) + ' dans le dossier (≈ ' + b + ' mots maximum).</p>'; })() : '') +
-      (c.missing.length ? '<p class="muted">Pour avancer, il reste :</p><ul class="missing">' + c.missing.map(function (m) { return '<li>' + esc(m.label) + '</li>'; }).join('') + '</ul>' : (S.current !== 'r9' ? '<p class="muted">Vous pouvez passer à la rubrique suivante.</p>' : '<p class="muted">Vous pouvez déposer votre dossier.</p>'));
+      (c.missing.length ? '<p class="muted">Pour avancer, il reste :</p><ul class="missing">' + c.missing.map(function (m) { return '<li>' + esc(m.label) + '</li>'; }).join('') + '</ul>' : (r.partie === 2 ? '<p class="muted">Module terminé. Vous pouvez passer au suivant.</p>' : S.current !== 'r9' ? '<p class="muted">Vous pouvez passer à la rubrique suivante.</p>' : '<p class="muted">Vous pouvez déposer votre dossier.</p>'));
   }
 
   function go(rid) {
@@ -1362,6 +1395,7 @@
   function onInput(e) {
     const t = e.target;
     if (t.id === 'import-file' && e.type === 'change') { importerCopie(t.files && t.files[0]); return; }
+    if (t.hasAttribute && t.hasAttribute('data-photo-add') && e.type === 'change') { addPhotos(t.getAttribute('data-photo-add'), t.files); return; }
     if (t.id === 'lex-q' && e.type === 'input') {
       const st = S.lexState || {};
       renderLexique(t.value, st.cat);
@@ -1396,6 +1430,7 @@
     if (rid === 'r2' && path[1].indexOf('reprise_') === 0) { const el = $('#reprise-box'); if (el) el.innerHTML = repriseHtml(); }
     if (rid === 'r9' && path[1].indexOf('coh_') === 0) { const b = $('#depot-box'); if (b) b.innerHTML = depotHtml(); }
     if (rid === 'r9') { const b = $('#depot-box'); if (b && path[1] !== 'oral' && path[1] !== 'questions') b.innerHTML = depotHtml(); }
+    if (path[1] !== '_photos') refreshCalcs();
     refreshStatus();
   }
 
@@ -1419,6 +1454,9 @@
     if (t.id === 'btn-import') { const f = $('#import-file'); if (f) { f.value = ''; f.click(); } return; }
     if (t.id === 'btn-apercu' || t.id === 'btn-apercu2') { await saveNow(); renderApercu(S.data, Store.profile); return; }
     if (t.id === 'btn-oral' || t.id === 'btn-oral-top') { await saveNow(); renderOral('supports'); return; }
+    if (t.id === 'btn-banquier' || t.id === 'btn-banquier2') { await saveNow(); renderBanquier(S.data, Store.profile); return; }
+    const pdel = t.getAttribute('data-photo-del');
+    if (pdel) { const a = pdel.split('|'); const ph = photosOf(a[0]); const i = parseInt(a[1], 10); if (ph[i] && confirm('Retirer cette photo de votre dossier ?')) { ph.splice(i, 1); S.dirty = true; saveNow(); redrawPhotos(a[0]); } return; }
     const g = t.getAttribute('data-goto');
     if (g) { go(g); return; }
     const add = t.getAttribute('data-add-row');
@@ -1439,6 +1477,150 @@
     const btn = $('#pdf-send'); btn.disabled = true; btn.textContent = 'Envoi en cours…';
     try { await Store.uploadPdf(file); toast('Dossier déposé. Votre professeur peut le télécharger.', 'ok'); await loadDepots(); }
     catch (err) { toast(err.message, 'err'); btn.disabled = false; btn.textContent = 'Déposer mon PDF'; }
+  }
+
+  /* ================= Deuxième partie : blocs calculés ================= */
+  function calcCtx() {
+    let c = null, f = null, pv = null;
+    return {
+      data: S.data, esc: esc, eur: eur, pct: pct, num: C.num, nl2br: nl2br, annuite: C.annuite, today: new Date(),
+      ro: S.readOnly ? ' disabled' : '',
+      ca: function () { return c || (c = ca()); },
+      fin: function () { return f || (f = finance()); },
+      prev: function () { return pv || (pv = C.previsionnel(rd('r8'), this.ca(), this.fin())); },
+      planActions: function () { return C.planActionsTotal(rd('r6')); }
+    };
+  }
+  function calcHtml(fn) {
+    const r = PC.render[fn];
+    if (!r) return '';
+    try { return r(calcCtx()); } catch (e) { console.error(e); return '<p class="muted">Calcul indisponible pour le moment.</p>'; }
+  }
+  function refreshCalcs() {
+    $$('[data-calc]').forEach(function (el) { el.innerHTML = calcHtml(el.getAttribute('data-calc')); lexify(el, Object.assign({}, S.lexUsed)); });
+  }
+
+  /* ================= Photos ================= */
+  const MAX_PHOTOS = 12;
+  function photosOf(rid) { const d = rd(rid); return Array.isArray(d._photos) ? d._photos : []; }
+  function photoSrc(ph) { return Store.photoSrc(ph.path); }
+  function photosSection(r) {
+    const hint = r.photoHint === '' ? '' : (r.photoHint || 'Photos de terrain, de vitrine, de concurrents, de documents : tout ce qui illustre cette partie.');
+    if (r.photoHint === '' && !photosOf(r.id).length) return '';
+    return '<section class="card photos" id="photos-' + r.id + '"><h2>Mes photos <span class="opt">(facultatif)</span></h2>' + photosInner(r, hint) + '</section>';
+  }
+  function photosInner(r, hint) {
+    const ph = photosOf(r.id);
+    const ro = S.readOnly;
+    let h = hint && !ro ? '<p class="help">' + esc(hint) + ' Cochez « Dans mon dossier » pour qu’une photo apparaisse dans l’aperçu imprimable.</p>' : '';
+    h += '<div class="ph-grid">' + ph.map(function (p, i) {
+      return '<figure class="ph"><div class="ph-img"><img alt="' + esc(p.legende || 'Photo') + '" data-ph="' + esc(p.path) + '" loading="lazy"></div>' +
+        '<input type="text" class="ph-leg" placeholder="Légende : ce que montre la photo, où, quand" data-path="' + pathAttr([r.id, '_photos', String(i), 'legende']) + '" value="' + esc(p.legende) + '"' + (ro ? ' disabled' : '') + '>' +
+        '<div class="ph-act"><label class="check small"><input type="checkbox" data-path="' + pathAttr([r.id, '_photos', String(i), 'dossier']) + '"' + (p.dossier === true ? ' checked' : '') + (ro ? ' disabled' : '') + '><span>Dans mon dossier</span></label>' +
+        (ro ? '' : '<button type="button" class="btn ghost small danger" data-photo-del="' + r.id + '|' + i + '">Retirer</button>') + '</div></figure>';
+    }).join('') + '</div>';
+    if (!ro) {
+      if (ph.length < MAX_PHOTOS) h += '<label class="btn ghost ph-add"><input type="file" accept="image/*" multiple hidden data-photo-add="' + r.id + '">+ Ajouter des photos</label><span class="muted small ph-info" id="ph-info-' + r.id + '">' + ph.length + ' / ' + MAX_PHOTOS + '</span>';
+      else h += '<p class="muted small">' + MAX_PHOTOS + ' photos au maximum dans cette partie : retirez-en une pour en ajouter.</p>';
+    }
+    return h;
+  }
+  function redrawPhotos(rid) {
+    const box = $('#photos-' + rid);
+    const r = rub(rid);
+    if (!box || !r) return;
+    box.innerHTML = '<h2>Mes photos <span class="opt">(facultatif)</span></h2>' + photosInner(r, r.photoHint === '' ? '' : (r.photoHint || 'Photos de terrain, de vitrine, de concurrents, de documents : tout ce qui illustre cette partie.'));
+    loadPhotoThumbs(box);
+  }
+  function loadPhotoThumbs(root) {
+    $$('img[data-ph]', root || document).forEach(function (img) { if (!img.getAttribute('src')) img.src = Store.photoSrc(img.getAttribute('data-ph')); });
+  }
+  /** Réduit une image (côté le plus long, qualité JPEG) avant l'envoi. */
+  function compressImage(file, maxSide, quality) {
+    return new Promise(function (resolve, reject) {
+      const url = URL.createObjectURL(file);
+      const img = new Image();
+      img.onload = function () {
+        const k = Math.min(1, maxSide / Math.max(img.naturalWidth, img.naturalHeight));
+        const w = Math.round(img.naturalWidth * k), h = Math.round(img.naturalHeight * k);
+        const cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+        const g = cv.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h);
+        URL.revokeObjectURL(url);
+        cv.toBlob(function (b) { if (b) resolve(b); else reject(new Error('Image illisible.')); }, 'image/jpeg', quality);
+      };
+      img.onerror = function () { URL.revokeObjectURL(url); reject(new Error('Ce fichier n’est pas une image lisible (formats acceptés : JPEG, PNG, WebP).')); };
+      img.src = url;
+    });
+  }
+  async function addPhotos(rid, files) {
+    files = Array.prototype.slice.call(files || []);
+    if (!files.length) return;
+    const place = MAX_PHOTOS - photosOf(rid).length;
+    if (files.length > place) { toast('Seulement ' + place + ' photo' + (place > 1 ? 's' : '') + ' de plus dans cette partie.', 'err'); files = files.slice(0, place); }
+    const info = $('#ph-info-' + rid);
+    const local = Store.mode === 'demo' || Store.apercu;
+    let n = 0;
+    for (const file of files) {
+      if (info) info.textContent = 'Envoi de la photo ' + (n + 1) + ' sur ' + files.length + '…';
+      try {
+        const blob = await compressImage(file, local ? 1000 : 1600, local ? 0.72 : 0.82);
+        const path = await Store.uploadPhoto(blob);
+        const d = rd(rid);
+        if (!Array.isArray(d._photos)) d._photos = [];
+        d._photos.push({ path: path, legende: '', dossier: false, ajout: new Date().toISOString() });
+        n++;
+      } catch (err) { toast(err.message, 'err'); }
+    }
+    if (n) { S.dirty = true; await saveNow(); toast(n + ' photo' + (n > 1 ? 's ajoutées' : ' ajoutée') + '. Ajoutez une légende.', 'ok'); }
+    redrawPhotos(rid);
+  }
+  function photosDoc(rid, tout) {
+    const ph = photosOf(rid).filter(function (p) { return tout || p.dossier === true; });
+    if (!ph.length) return '';
+    return '<div class="doc-photos">' + ph.map(function (p) { return '<figure><img alt="" data-ph="' + esc(p.path) + '">' + (p.legende || (tout && !p.dossier) ? '<figcaption>' + esc(p.legende || '') + (tout && !p.dossier ? ' <span class="muted">(non retenue pour le dossier)</span>' : '') + '</figcaption>' : '') + '</figure>'; }).join('') + '</div>';
+  }
+
+  /* ================= Dossier banquier (imprimable) ================= */
+  function renderBanquier(data, profil, opts) {
+    opts = opts || {};
+    const keep = S.data;
+    if (data) S.data = data;
+    S.view = 'banquier';
+    renderNav();
+    const main = $('#main');
+    const c = ca(), f = finance();
+    const p1 = rd('p1'), p9 = rd('p9'), r1 = rd('r1'), r4 = rd('r4');
+    const nom = rd('r0').projet_nom || rd('p3').nom_retenu || 'Mon projet';
+    const qui = profil ? (profil.prenom + ' ' + profil.nom).trim() : '';
+    const field = function (rid, fid) { const r = rub(rid); const fl = r && r.fields.find(function (x) { return x.id === fid; }); return fl ? docField(r, fl, true) : ''; };
+    let numSec = 0;
+    const sec = function (t, body) { return body && body.replace(/<[^>]+>/g, '').trim() ? '<section class="doc-sec"><h2>' + (t.indexOf('Annexe') === 0 ? t : (++numSec) + '. ' + t) + '</h2>' + body + '</section>' : ''; };
+    let h = '<div class="apercu-bar no-print"><button type="button" class="btn ghost" id="bq-back">← Retour</button><button type="button" class="btn" onclick="window.print()">Imprimer ou enregistrer en PDF</button></div>' +
+      '<p class="callout no-print">Votre dossier banquier reprend automatiquement vos réponses. Complétez les modules A (profil) et I (demande) et les rubriques 6 et 8 pour qu’il soit complet.</p><div class="doc">';
+    h += '<section class="doc-cover"><h1>' + esc(nom) + '</h1><p>' + nl2br(r1.idee_phrase || '') + '</p>' +
+      '<div class="bq-ask"><div><span>Montant demandé</span><strong>' + (C.num(p9.montant) ? eur(C.num(p9.montant)) : '–') + '</strong></div><div><span>Durée</span><strong>' + (C.num(p9.duree) ? C.num(p9.duree) + ' ans' : '–') + '</strong></div><div><span>Besoin total</span><strong>' + (f.totBesoins ? eur(f.totBesoins) : '–') + '</strong></div><div><span>Apport et quasi-fonds propres</span><strong>' + (f.totBesoins ? pct(f.partFP) : '–') + '</strong></div></div>' +
+      '<p class="muted">Dossier de demande de financement · ' + esc(qui) + ' · ' + new Date().toLocaleDateString('fr-FR', { month: 'long', year: 'numeric' }) + '</p></section>';
+    h += sec('Le projet en bref', (p9.pitch ? '<p>' + nl2br(p9.pitch) + '</p>' : '') + field('r1', 'type_projet') + (r4.pos_pour ? '<p><strong>Positionnement :</strong> « Pour ' + esc(r4.pos_pour) + ', ' + esc(nom) + ' est ' + esc(r4.pos_est || '') + ' qui ' + esc(r4.pos_qui || '') + (r4.pos_parce ? ', parce que ' + esc(r4.pos_parce) : '') + '. »</p>' : ''));
+    h += sec('Le porteur de projet', field('p1', 'pourquoi') + field('p1', 'competences') + field('p1', 'bilan') + field('p1', 'reseau'));
+    h += sec('Le marché', field('r3', 'chiffres_cles') + field('r3', 'swot') + field('r2', 'conclusion'));
+    h += sec('La stratégie commerciale', field('r4', 'cible_principale') + field('r6', 'p_produit') + field('r6', 'p_prix') + field('r6', 'p_distribution') + field('r6', 'p_communication') + field('p7', 'persona') + field('p7', 'budget'));
+    h += sec('Les moyens', field('r7', 'partenaires') + field('p5', 'local') + field('p5', 'bail') + field('p5', 'assurances') + field('p4', 'choix'));
+    if (f.CA) {
+      const pv = C.previsionnel(rd('r8'), c, f);
+      h += sec('Le chiffre d’affaires', '<p>' + Math.round(c.sc.prudent.clients) + ' clients par jour × ' + eur(c.panierHT, 2) + ' HT × ' + c.jours + ' jours = <strong>' + eur(c.caPrudent) + ' HT</strong> (scénario prudent). Seuil de rentabilité : ' + f.seuilClients + ' clients par jour, marge de sécurité de ' + pct(f.margeSecu) + '.</p>');
+      h += sec('Le prévisionnel sur 3 ans', '<div class="doc-calc">' + cr3Html(pv, f) + '</div><div class="doc-calc">' + pf3Html(pv) + '</div>');
+      h += sec('La trésorerie de la première année', '<div class="doc-calc">' + tresoHtml(pv) + '</div>');
+      h += sec('L’emprunt', '<div class="doc-calc">' + empruntHtml(pv) + '</div>');
+    }
+    h += sec('La demande et les garanties', field('p9', 'objet') + field('p9', 'garanties') + field('r8', 'risques'));
+    const photos = ALL.map(function (r) { return photosDoc(r.id, false); }).join('');
+    if (photos) h += sec('Annexe — Photos', photos);
+    h += '</div>';
+    main.innerHTML = h;
+    S.data = keep;
+    loadPhotoThumbs(main);
+    $('#bq-back').addEventListener('click', function () { if (opts.onBack) opts.onBack(); else go(S.current); });
+    window.scrollTo(0, 0);
   }
 
   /* ================= Aperçu du dossier (imprimable) ================= */
@@ -1488,7 +1670,7 @@
         '<ol class="doc-toc">' + R.slice(1, 9).map(function (r) { return '<li><span>' + esc(r.titre) + '</span><span class="muted">' + esc(r.page) + '</span></li>'; }).join('') + '<li><span>Annexes</span><span class="muted">hors pagination</span></li></ol></section>';
       R.slice(1, 9).forEach(function (r) {
         const body = r.fields.map(function (f) { return docField(r, f); }).join('').replace(/<h3>[^<]*<\/h3>(?=<h3>|$)/g, '');
-        h += '<section class="doc-sec"><h2>' + r.num + '. ' + esc(r.titre) + ' <span class="muted small">' + esc(r.page) + '</span></h2>' + (body || '<p class="muted">Rubrique non encore complétée.</p>') + '</section>';
+        h += '<section class="doc-sec"><h2>' + r.num + '. ' + esc(r.titre) + ' <span class="muted small">' + esc(r.page) + '</span></h2>' + (body || '<p class="muted">Rubrique non encore complétée.</p>') + photosDoc(r.id, S.readOnly) + '</section>';
       });
     } else {
       h += annexesHtml();
@@ -1496,6 +1678,8 @@
     h += '</div>';
     main.innerHTML = h;
     S.data = keep;
+    loadPhotoThumbs(main);
+    if (S.readOnly) { const bar = $('.apercu-bar', main); if (bar) { const b = document.createElement('button'); b.type = 'button'; b.className = 'btn ghost'; b.textContent = 'Partie « Aller plus loin »'; b.addEventListener('click', function () { renderBanquier(data, profil, { onBack: function () { renderApercu(data, profil, opts); } }); }); bar.appendChild(b); } }
     $('#ap-back').addEventListener('click', function () { if (opts.onBack) opts.onBack(); else go(S.current); });
     $$('[data-ap-mode]').forEach(function (b) { b.addEventListener('click', function () { renderApercu(data, profil, Object.assign({}, opts, { mode: b.getAttribute('data-ap-mode') })); }); });
     window.scrollTo(0, 0);
@@ -1643,9 +1827,10 @@
       const prog = (e.dossier && e.dossier.progress) || {};
       const g = Math.round(R.reduce(function (s, r) { return s + (prog[r.id] || 0); }, 0) / R.length);
       const squares = R.map(function (r) { const p = prog[r.id] || 0; return '<span class="sq ' + (p >= 100 ? 'full' : (p > 0 ? 'part' : '')) + '" title="Rubrique ' + r.num + ' — ' + esc(r.titre) + ' : ' + p + ' %">' + r.num + '</span>'; }).join('');
+      const g2 = plusPct(prog);
       const dep = e.depots[0];
       return '<tr><td><strong>' + esc(e.nom.toUpperCase()) + '</strong> ' + esc(e.prenom) + '<br><span class="muted small">' + esc(e.identifiant || '') + (e.bloque_jusqua && new Date(e.bloque_jusqua) > new Date() ? ' · <span class="lg-ko">bloqué (trop d’essais)</span>' : '') + '</span></td><td>' + esc(e.classe || '') + '</td>' +
-        '<td><div class="bar small"><span style="width:' + g + '%"></span></div><span class="small">' + g + ' %</span><div class="squares">' + squares + '</div></td>' +
+        '<td><div class="bar small"><span style="width:' + g + '%"></span></div><span class="small">' + g + ' %</span><div class="squares">' + squares + '</div>' + (g2 ? '<span class="small muted">Aller plus loin : ' + g2 + ' %</span>' : '') + '</td>' +
         '<td class="small">' + (e.dossier && e.dossier.updated_at ? new Date(e.dossier.updated_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) : '—') + '</td>' +
         '<td>' + (dep ? '<span class="small">' + new Date(dep.created_at).toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }) + (e.depots.length > 1 ? ' · ' + e.depots.length + ' versions' : '') + '</span><br><button type="button" class="btn small" data-dl="' + esc(dep.path) + '" data-fn="' + esc(fileName(e, dep)) + '">Télécharger le PDF</button>' : '<span class="muted small">Aucun dépôt</span>') + '</td>' +
         '<td><button type="button" class="btn ghost small" data-voir="' + esc(e.id) + '">Voir ses réponses</button> <button type="button" class="btn ghost small" data-grille="' + esc(e.id) + '">Grille d’évaluation</button> <button type="button" class="btn ghost small" data-code="' + esc(e.id) + '">Nouveau code</button> <button type="button" class="btn ghost small danger" data-suppr="' + esc(e.id) + '">Supprimer</button></td></tr>';
@@ -1793,11 +1978,11 @@
   function fileName(e, dep) { return ('EF3_' + (e.classe || '') + '_' + e.nom + '_' + e.prenom).replace(/[^\w\-]+/g, '_') + '.pdf'; }
 
   function exportCsv(list) {
-    const head = ['Nom', 'Prénom', 'Identifiant', 'Classe', 'Avancement global (%)'].concat(R.map(function (r) { return 'R' + r.num + ' ' + r.court + ' (%)'; })).concat(['Dernière activité', 'Dernier dépôt', 'Nombre de versions']);
+    const head = ['Nom', 'Prénom', 'Identifiant', 'Classe', 'Avancement global (%)'].concat(R.map(function (r) { return 'R' + r.num + ' ' + r.court + ' (%)'; })).concat(['Aller plus loin (%)', 'Dernière activité', 'Dernier dépôt', 'Nombre de versions']);
     const lines = [head].concat(list.map(function (e) {
       const prog = (e.dossier && e.dossier.progress) || {};
       const g = Math.round(R.reduce(function (s, r) { return s + (prog[r.id] || 0); }, 0) / R.length);
-      return [e.nom, e.prenom, e.identifiant, e.classe, g].concat(R.map(function (r) { return prog[r.id] || 0; })).concat([
+      return [e.nom, e.prenom, e.identifiant, e.classe, g].concat(R.map(function (r) { return prog[r.id] || 0; })).concat([plusPct(prog),
         e.dossier && e.dossier.updated_at ? new Date(e.dossier.updated_at).toLocaleString('fr-FR') : '',
         e.depots[0] ? new Date(e.depots[0].created_at).toLocaleString('fr-FR') : '', e.depots.length]);
     }));
